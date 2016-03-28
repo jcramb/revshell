@@ -23,7 +23,7 @@
 * Written in C/C++
 * Terminal emulation (vt100) using modified libvterm
 * Communications encrypted using OpenSSL (TLSv1)
-* Tested on Arch/Kali with OSX testing soon.
+* Tested on Arch/Kali/Ubuntu and OSX
 
 ### Goals:
 * (done) OSX or Linux endpoint control
