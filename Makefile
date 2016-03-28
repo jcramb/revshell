@@ -2,7 +2,7 @@ override CXXFLAGS += -std=c++11 -Wno-write-strings -ggdb
 override LDFLAGS += 
 
 CC = g++
-INCLUDE = $(shell pkg-config --cflags ncurses glib-2.0)
+INCLUDE = $(shell pkg-config --cflags glib-2.0)
 BUILD_DIR = build
 COMMON_SRC = cert.cc core.cc ssl.cc
 SERVER_SRC = server.cc $(COMMON_SRC) vterm.cc

@@ -11,11 +11,13 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
 #include <poll.h>
 #include <pty.h>
 #include <pwd.h>
+
 
 #include "core.h"
 #include "ssl.h"
@@ -184,6 +186,10 @@ int pty_shell::pty_init(int rows, int cols) {
         return -1;
     }
 
+    // make pipe non-blocking
+    int flags = fcntl(master_fd, F_GETFL, 0);
+    fcntl(master_fd, F_SETFL, flags | O_NONBLOCK);
+
     // spawn shell for forked pseudo terminal
     char * shell = NULL;
     if (slave_pid == 0) {
@@ -235,6 +241,7 @@ int pty_shell::pty_read(char * buf, int len) {
         return (errno == EINTR) ? 0 : retval;
     }
 
+    /* -- PENDING REMOVAL AS OSX DOESN'T SUPPORT 'TIOCINQ' --
     // get number of bytes waiting in pipe 
     int bytes_ready;
     retval = ioctl(master_fd, TIOCINQ, &bytes_ready);
@@ -262,6 +269,17 @@ int pty_shell::pty_read(char * buf, int len) {
     }
 
     return bytes_ready - bytes_remaining;
+    */
+
+    int bytes;
+    int bytes_read = 0;
+    char * pos = buf;
+    while ((bytes = read(master_fd, pos, len - bytes_read)) > 0) {
+        bytes_read += bytes;
+        pos += bytes;
+    }
+
+    return bytes_read;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

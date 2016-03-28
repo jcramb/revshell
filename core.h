@@ -21,9 +21,9 @@
 #define LOG_FILE (1<<1)
 #define LOG_ECHO (1<<2)
 
-#define MSG_INVALID 0xFFFFFFFF
-#define MSG_TTYKEYS 0xBEBAFEBA
-#define MSG_WNDSIZE 0x10101010
+#define MSG_INVALID (0)
+#define MSG_TTYKEYS (1)
+#define MSG_WNDSIZE (2)
 
 #ifndef MAX
 #define MAX(a, b) (a > b ? a : b)

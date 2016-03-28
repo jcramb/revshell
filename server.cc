@@ -11,7 +11,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
-#include <ncurses.h>
+#include <curses.h>
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
