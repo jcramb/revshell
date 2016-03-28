@@ -66,10 +66,6 @@ int main(int argc, char **argv) {
     // initialise debug log
     log_init(argv[0], LOG_FILE | LOG_ECHO);
     
-    char pbuf[512] = {0};
-    int err = readlink("/proc/self/exe", pbuf, sizeof(pbuf));
-    LOG("%s\n", pbuf);
-
     // set host ip / port if required
     if (argc > 1) {
         ssl_set_host(argv[1]);
