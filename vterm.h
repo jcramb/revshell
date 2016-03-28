@@ -32,7 +32,7 @@ pid_t        vterm_get_pid(vterm_t *vterm);
 int          vterm_get_pty_fd(vterm_t *vterm);
 const char*  vterm_get_ttyname(vterm_t *vterm);
 
-ssize_t      vterm_read_pipe(vterm_t *vterm, char * buf = NULL);
+void         vterm_remote_read(vterm_t * term, const char * buf, int len);
 void         vterm_write_pipe(vterm_t *vterm, guint32 keycode);
 
 void         vterm_wnd_set(vterm_t *vterm,WINDOW *window);
@@ -50,7 +50,6 @@ void         vterm_erase_cols(vterm_t *vterm, int start_cols);
 void         vterm_scroll_up(vterm_t *vterm);
 void         vterm_scroll_down(vterm_t *vterm);
 
-void         vterm_remote_read(vterm_t * term, const char * buf, int len);
 void         vterm_resize(vterm_t *vterm,guint width,guint height);
 
 // private

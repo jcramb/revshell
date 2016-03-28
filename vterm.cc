@@ -13,7 +13,6 @@
 #include <poll.h>
 #include <utmp.h>
 #include <pwd.h>
-#include <pty.h>
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
@@ -64,9 +63,6 @@ vterm_t* vterm_create(guint width,guint height,guint flags)
    char           *user_shell=NULL;
    pid_t          child_pid;
    int            master_fd;
-   struct winsize ws;
-   ws.ws_xpixel = 0;
-   ws.ws_ypixel = 0;
    //int            cell_count;
    int            i;
 
@@ -104,57 +100,8 @@ vterm_t* vterm_create(guint width,guint height,guint flags)
 
    vterm->flags=flags;
 
-   memset(&ws,0,sizeof(ws));
-   ws.ws_row=height;
-   ws.ws_col=width;
-
-   child_pid = forkpty(&master_fd,NULL,NULL,&ws);
-   vterm->pty_fd = master_fd;
-
-   if(child_pid < 0)
-   {
-      vterm_destroy(vterm);
-      return NULL;
-   }
-
-   if(child_pid==0)
-   {
-      signal(SIGINT,SIG_DFL);
-
-      // default is rxvt emulation
-      setenv("TERM","rxvt",1);
-
-      if(flags & VTERM_FLAG_VT100)
-      {
-         setenv("TERM","vt100",1);
-      }
-
-      user_profile=getpwuid(getuid());
-      if(user_profile==NULL) user_shell="/bin/sh";
-      else if(user_profile->pw_shell==NULL) user_shell="/bin/sh";
-      else user_shell=user_profile->pw_shell;
-
-      if(user_shell==NULL) user_shell="/bin/sh";
-
-      // start the shell
-      if(execl(user_shell,user_shell,"-l",NULL)==-1)
-      {
-         exit(EXIT_FAILURE);
-      }
-
-      exit(EXIT_SUCCESS);
-   }
-
-   vterm->child_pid=child_pid;
-
-   if(ttyname_r(master_fd,vterm->ttyname,sizeof(vterm->ttyname)-1) !=0)
-   {
-      snprintf(vterm->ttyname,sizeof(vterm->ttyname)-1,"vterm");
-   }
-
    if(flags & VTERM_FLAG_VT100) vterm->write=vterm_write_vt100;
    else vterm->write=vterm_write_rxvt;
-
    return vterm;
 }
 
@@ -359,95 +306,6 @@ void vterm_write_vt100(vterm_t *vterm, guint32 keycode)
 
 void vterm_remote_read(vterm_t * vterm, const char * buf, int len) {
     vterm_render(vterm, buf, len);
-}
-
-ssize_t vterm_read_pipe(vterm_t *vterm, char * retbuf)
-{
-   struct pollfd     fd_array;
-   char 					*buf=NULL;
-   char              *pos;
-   int               bytes_peek=0;
-	size_t				bytes_waiting;
-   ssize_t				bytes_read=0;
-   size_t            bytes_remaining=0;
-   size_t            bytes_total=0;
-   gint              retval;
-   pid_t             child_pid;
-   int               pid_status;
-   int               errcpy=0;
-
-   // make sure pty file descriptor is good
-   if(vterm->pty_fd < 0) return -1;
-
-   // check to see if child pid has exited
-   child_pid=waitpid(vterm->child_pid,&pid_status,WNOHANG);
-
-   if(child_pid==vterm->child_pid || child_pid==-1)
-   {
-      vterm->state |= STATE_CHILD_EXITED;
-      return -1;
-   }
-
-   fd_array.fd=vterm->pty_fd;
-   fd_array.events=POLLIN;
-
-   // wait 10 millisecond for data on pty file descriptor.
-   retval=poll(&fd_array,1,10);
-
-   // no data or poll() error.
-   if(retval <= 0)
-   {
-      if(errno == EINTR) return 0;
-      return retval;
-   }
-
-#ifdef FIONREAD
-	retval=ioctl(vterm->pty_fd,FIONREAD,&bytes_peek);
-#else
-	retval=ioclt(vterm->pty_fd,TIOCINQ,&bytes_peek);
-#endif
-
-   if(retval == -1) return 0;
-	if(bytes_peek == 0) return 0;
-
-   bytes_waiting=bytes_peek;
-   if(bytes_waiting > SSIZE_MAX) bytes_waiting=SSIZE_MAX;
-   bytes_remaining=bytes_waiting;
-
-	buf=(char*)calloc(bytes_waiting+10,sizeof(char));	/* 10 byte padding	*/
-   pos=buf;
-
-   do
-   {
-      bytes_read=read(vterm->pty_fd,pos,bytes_remaining);
-      if(bytes_read == -1)
-      {
-         if(errno == EINTR) bytes_read=0;
-         else errcpy=errno;
-      }
-
-      if(bytes_read <= 0) break;
-
-      bytes_remaining-=bytes_read;
-      bytes_total+=bytes_read;
-      pos+=bytes_read;
-   }
-   while(bytes_remaining > 0);
-
-   // render the data to the offscreen terminal buffer.
-   if((bytes_waiting > 0) && (bytes_read != -1))
-   {
-      //vterm_render(vterm,buf,bytes_read);
-      if (retbuf != NULL) {
-          memcpy(retbuf, buf, bytes_read); 
-      }
-   }
-
-   // release memory
-   if(buf!=NULL) free(buf);
-   if(bytes_read == -1 && errcpy != EINTR) return -1;
-
-   return bytes_waiting-bytes_remaining;
 }
 
 void vterm_put_char(vterm_t *vterm,chtype c)

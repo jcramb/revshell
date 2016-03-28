@@ -5,6 +5,16 @@
 #ifndef core_h
 #define core_h
 
+//
+// forkpty() platform-dependent header
+//
+
+#ifdef __APPLE__    
+    #include <util.h>
+#else
+    #include <pty.h>
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 // types / defines
 

@@ -15,9 +15,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <poll.h>
-#include <pty.h>
 #include <pwd.h>
-
 
 #include "core.h"
 #include "ssl.h"
