@@ -5,9 +5,8 @@
 #ifndef core_h
 #define core_h
 
-//
-// forkpty() platform-dependent header
-//
+////////////////////////////////////////////////////////////////////////////////
+// forkpty() platform-dependent header (POSIX - ain't nobody got time for dat)
 
 #ifdef __APPLE__    
     #include <util.h>
@@ -17,9 +16,6 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // types / defines
-
-#define SSL_CRTFILE "/root/revshell/vterm/ca/shell_crt.pem"
-#define SSL_KEYFILE "/root/revshell/vterm/ca/shell_key.pem"
 
 #define TPT_CLIENT 1
 #define TPT_SERVER 2

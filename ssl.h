@@ -13,8 +13,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // defines
 
-#define SSL_CRTFILE "/root/revshell/vterm/ca/shell_crt.pem"
-#define SSL_KEYFILE "/root/revshell/vterm/ca/shell_key.pem"
 #define SSL_DEFAULT_HOST "127.0.0.1"
 #define SSL_DEFAULT_PORT 443
 
