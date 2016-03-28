@@ -49,6 +49,7 @@ class message;
 
 // func proto
 void log_init(const char * prefix, int flags);
+void log_flags(int flags = 0);
 void log_print(const char * fmt, ...);
 void hexdump(const char * buf, int len, int cols = 16, bool ascii = true); 
 

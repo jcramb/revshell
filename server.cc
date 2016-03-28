@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
     int rows, cols;
 
     // initialise debug log
-    log_init(argv[0], LOG_FILE);
+    log_init(argv[0], LOG_FILE | LOG_ECHO);
 
     // set host port if required
     if (argc > 1) {
@@ -84,6 +84,9 @@ int main(int argc, char **argv) {
 
     // setup tty emulation and retrieve size of terminal window
     tty.init(&rows, &cols);
+    
+    // disable echo for logging since we're in a curses window now
+    log_flags(LOG_FILE);
 
     // resize client shell to server terminal size
     LOG("info: sending resize to client (%dx%d)\n", rows, cols);

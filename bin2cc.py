@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 import sys
 
@@ -29,7 +29,7 @@ for i in xrange(2, len(sys.argv)):
 
     src += '\n};'
     src += 'int _%sbuf_len = sizeof(_%sbuf);\n\n' % (prefix, prefix)
-    
+
 header += '#endif'
 
 with open('%s.h' % base, 'w') as f:

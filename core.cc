@@ -25,7 +25,14 @@ void log_init(const char * prefix, int flags) {
     g_logpath = ".";
     g_logpath += p;
     g_logpath += "_log";
-    g_logflags = flags;
+    log_flags(flags);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// set log flags
+
+void log_flags(int flags) {
+  g_logflags = flags;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
