@@ -75,8 +75,7 @@ int main(int argc, char **argv) {
     }
 
     // wait for reverse shell to connect via SSL (blocking)
-    printf("[server] listening at %s:%d\n", get_ip(), ssl_get_port());
-    LOG("info: starting c2 server\n");
+    LOG("info: starting c2 server %s:%d\n", get_ip(), ssl_get_port());
     if (tpt.init(TPT_SERVER) < 0) {
         LOG("fatal: failed to establish transport connection\n");
         exit(-1);

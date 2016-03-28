@@ -185,7 +185,7 @@ void ssl_dump_certs(SSL * ssl) {
         X509_free(cert);
 
     } else {
-        LOG("error: no certs to dump\n");
+        LOG("info: no certs to dump\n");
     }
 }
 
@@ -254,14 +254,27 @@ int ssl_stream::init(int type) {
     if (type == TPT_CLIENT) {
 
         // if client, connect to c2 server
-        return this->connect(g_host, g_port);
+        if (this->connect(g_host, g_port) < 0) {
+            LOG("error: transport could not connect\n");
+        } else {
+            
+            // success!
+            return 0;
+        }
 
     } else if (type == TPT_SERVER) {
 
         // if server, bind to desired port and accept client connection
-        if (this->bind(g_port) == 0) {
-            return this->accept();
-        } 
+        LOG("info: waiting for client...\n");
+        if (this->bind(g_port) < 0) {
+            LOG("error: transport could not bind\n");
+        } else if (this->accept() < 0) {
+            LOG("error: transport could not accept\n");
+        } else {
+
+            // success!
+            return 0;
+        }
 
     } else {
         LOG("error: invalid transport type\n");
