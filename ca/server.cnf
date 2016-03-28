@@ -1,0 +1,21 @@
+[ req ]
+prompt                  = no
+distinguished_name      = server_distinguished_name
+req_extensions          = v3_req
+
+[ server_distinguished_name ]
+commonName              = LegitSvr
+stateOrProvinceName     = DC
+countryName             = US
+emailAddress            = root@defense.gov
+organizationName        = Acme
+organizationalUnitName  = BizX
+
+[ v3_req ]
+basicConstraints        = CA:FALSE
+keyUsage                = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName          = @alt_names
+
+[ alt_names ]
+DNS.0                   = defense.gov
+DNS.1                   = alt.defense.gov

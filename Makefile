@@ -1,0 +1,46 @@
+override CXXFLAGS += -std=c++11 -Wno-write-strings -ggdb
+override LDFLAGS += 
+
+CC = g++
+INCLUDE = $(shell pkg-config --cflags ncurses glib-2.0)
+BUILD_DIR = build
+COMMON_SRC = cert.cc core.cc ssl.cc
+SERVER_SRC = server.cc $(COMMON_SRC) vterm.cc
+CLIENT_SRC = client.cc $(COMMON_SRC)
+SERVER_OBJ = $(SERVER_SRC:%.cc=$(BUILD_DIR)/%.o)
+CLIENT_OBJ = $(CLIENT_SRC:%.cc=$(BUILD_DIR)/%.o)
+SERVER_LIB += -lutil -lncurses -lglib-2.0 -lssl -lcrypto
+CLIENT_LIB += -lutil -lssl -lcrypto
+CERTS = cert.h cert.cc
+
+.PHONY: all mkdir mkcert clean
+
+all: mkdir server client
+
+cert.h: mkcert
+cert.cc: mkcert
+mkcert:
+	@./bin2cc.py cert crt:ca/shell_crt.pem key:ca/shell_key.pem 
+
+server: $(CERTS) $(SERVER_OBJ)
+	@echo LINK $@ 
+	@$(CC) $(CXXFLAGS) $(LDFLAGS) $(SERVER_OBJ) -o $@ $(SERVER_LIB)
+
+client: $(CERTS) $(CLIENT_OBJ)
+	@echo LINK $@ 
+	@$(CC) $(CXXFLAGS) $(LDFLAGS) $(CLIENT_OBJ) -o $@ $(CLIENT_LIB)
+
+$(BUILD_DIR)/%.o: %.cc
+	@echo CC $<
+	@$(CC) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+mkdir: $(BUILD_DIR)
+$(BUILD_DIR):
+	@mkdir -p $@
+
+clean:
+	rm -rf $(BUILD_DIR)
+	rm -f $(CERTS)
+	rm -f server
+	rm -f client
+	rm -f .*_log

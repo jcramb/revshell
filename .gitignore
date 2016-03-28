@@ -1,0 +1,11 @@
+*~
+*.a
+*.so
+*.o
+*.server_log
+*.client_log
+build
+client
+server
+cert.h
+cert.cc
