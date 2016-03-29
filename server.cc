@@ -2,12 +2,6 @@
 // server.cc
 // author: jcramb@gmail.com
 
-#include <cstdlib>
-#include <csignal>
-#include <cstring>
-#include <climits>
-#include <cstdio>
-
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -18,8 +12,14 @@
 #include <poll.h>
 #include <pwd.h>
 
-#include "vterm.h"
+#include <cstdlib>
+#include <csignal>
+#include <cstring>
+#include <climits>
+#include <cstdio>
+
 #include "core.h"
+#include "vterm.h"
 #include "ssl.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,7 +59,7 @@ message & mk_resize_msg(int rows, int cols) {
 
 int main(int argc, char **argv) {
     terminal tty;
-    ssl_stream ssl;
+    ssl_transport ssl;
     transport & tpt = ssl;
     int read_count = 0;
     int write_count = 0;
@@ -70,11 +70,10 @@ int main(int argc, char **argv) {
 
     // set host port if required
     if (argc > 1) {
-        ssl_set_port(atoi(argv[1]));
+        ssl.setopt(SSL_OPT_PORT, argv[1]);
     }
 
     // wait for reverse shell to connect via SSL (blocking)
-    LOG("info: starting c2 server %s:%d\n", get_ip(), ssl_get_port());
     if (tpt.init(TPT_SERVER) < 0) {
         LOG("fatal: failed to establish transport connection\n");
         exit(-1);

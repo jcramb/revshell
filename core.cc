@@ -2,13 +2,14 @@
 // core.cc
 // author: jcramb@gmail.com
 
+#include "core.h"
+
+#include <ctype.h>
+
 #include <string>
 #include <cstring>
 #include <cstdarg>
 #include <cstdio>
-#include <ctype.h>
-
-#include "core.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // debugging log global vars
@@ -63,9 +64,7 @@ void log_print(const char * fmt, ...) {
         if (f) {
             fprintf(f, "%s", logbuf);
             fclose(f);
-        } else {
-            fprintf(stderr, "WARNING: failed to open logfile\n");
-        }
+        } 
     }
 }
 

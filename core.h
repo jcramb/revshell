@@ -5,20 +5,19 @@
 #ifndef core_h
 #define core_h
 
-////////////////////////////////////////////////////////////////////////////////
-// forkpty() platform-dependent header (POSIX - ain't nobody got time for dat)
-
 #ifdef __APPLE__    
-    #include <util.h>
+    #include <util.h> // forkpty (POSIX - ain't nobody got time for dat)
 #else
     #include <pty.h>
 #endif
 
+#include <string>
+
 ////////////////////////////////////////////////////////////////////////////////
 // types / defines
 
-#define TPT_CLIENT 1
-#define TPT_SERVER 2
+#define TPT_CLIENT 2
+#define TPT_SERVER 1
 #define TPT_CLOSE  0
 #define TPT_EMPTY -1
 #define TPT_ERROR -2
@@ -40,7 +39,7 @@
 #endif
 
 #ifndef CLAMP
-#define CLAMP(val, min, max) MAX(min, (MIN(max, val))
+#define CLAMP(val, min, max) MAX(min, MIN(max, val))
 #endif
 
 #ifndef LOG_DISABLE
@@ -73,6 +72,8 @@ public:
     virtual int init(int type) = 0;
     virtual int send(message & msg) = 0;
     virtual int recv(message & msg) = 0;
+    virtual void setopt(int opt, std::string value) = 0;
+    virtual void close() = 0;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

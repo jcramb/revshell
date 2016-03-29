@@ -4,8 +4,8 @@
 #ifndef vterm_h
 #define vterm_h
 
-#include <unistd.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <curses.h>
 #include <glib.h>
 

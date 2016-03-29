@@ -2,6 +2,8 @@
 // vterm.cc
 // author: jcramb@gmail.com
 
+#include "vterm.h"
+
 #include <termios.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -21,8 +23,6 @@
 
 #include <glib.h>
 #include <curses.h>
-
-#include "vterm.h"
 
 struct vterm_cell_t {
    chtype         ch;                           // cell data

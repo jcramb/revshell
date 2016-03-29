@@ -5,63 +5,49 @@
 #ifndef ssl_h
 #define ssl_h
 
-#include <string>
 #include <openssl/ssl.h>
 
+#include <string>
+
 #include "core.h"
+#include "sock.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // defines
 
-#define SSL_DEFAULT_HOST "127.0.0.1"
-#define SSL_DEFAULT_PORT 443
-
-////////////////////////////////////////////////////////////////////////////////
-// func proto
-
-const char * get_ip(std::string iface = "");
-void ssl_set_host(std::string ip);
-void ssl_set_port(int port);
-const char * ssl_get_host();
-int ssl_get_port();
+#define SSL_OPT_HOST 1
+#define SSL_OPT_PORT 2
 
 ////////////////////////////////////////////////////////////////////////////////
 // OpenSSL implementation of transport interface
 
-class ssl_stream : public transport {
+class ssl_transport : public transport {
 public:
 
     // ctors / dtors
-    ssl_stream();
-    virtual ~ssl_stream();
+    ssl_transport();
+    virtual ~ssl_transport();
 
     // transport interface
     virtual int init(int type);
     virtual int send(message & msg);
     virtual int recv(message & msg);
-
-    // networking methods
-    int connect(std::string host, int port);
-    int bind(int port);
-    int accept();
-    void close();
-
-    // getters 
-    int src_port() { return s_port; }
-    int dst_port() { return d_port; }
-    const char * src_ip() { return s_ip.c_str(); }
-    const char * dst_ip() { return d_ip.c_str(); }
+    virtual void setopt(int opt, std::string value);
+    virtual void close();
 
 protected:
 
-    // networking members
-    int m_sock;
-    int s_port, d_port;
-    std::string s_ip, d_ip;
+    // transport options
+    int m_opt_port;
+    std::string m_opt_host;
 
-    // ssl members
-    SSL_CTX * ctx;
-    SSL * ssl;
+    // socket wrapper
+    int m_ssl_sock;
+    tcp_stream m_tcp;
+
+    // openssl members
+    SSL * m_ssl;
+    SSL_CTX * m_ctx;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

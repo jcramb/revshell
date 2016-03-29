@@ -1,10 +1,13 @@
-override CXXFLAGS += -std=c++11 -Wno-write-strings -ggdb
-override LDFLAGS += 
+CXXFLAGS = -std=c++11 -Wno-write-strings
+LDFLAGS = 
+
+all: CXXFLAGS += -ggdb
+final: CXXFLAGS += -O2 -DLOG_DISABLE
 
 CC = g++
 INCLUDE = $(shell pkg-config --cflags glib-2.0)
 BUILD_DIR = build
-COMMON_SRC = cert.cc core.cc ssl.cc
+COMMON_SRC = cert.cc core.cc sock.cc ssl.cc
 SERVER_SRC = server.cc $(COMMON_SRC) vterm.cc
 CLIENT_SRC = client.cc $(COMMON_SRC)
 SERVER_OBJ = $(SERVER_SRC:%.cc=$(BUILD_DIR)/%.o)
@@ -13,9 +16,10 @@ SERVER_LIB += -lutil -lncurses -lglib-2.0 -lssl -lcrypto
 CLIENT_LIB += -lutil -lssl -lcrypto
 CERTS = cert.h cert.cc
 
-.PHONY: all mkdir mkcert clean
+.PHONY: all final mkdir mkcert clean
 
 all: mkdir server client
+final: clean mkdir server client
 
 cert.h: mkcert
 cert.cc: mkcert
