@@ -261,6 +261,9 @@ int tcp_stream::accept() {
     d_ip = client_ip;
     d_port = ntohs(((struct sockaddr_in*)&client)->sin_port); 
     LOG("info: connection from %s:%d\n", d_ip.c_str(), d_port); 
+
+    // store client socket
+    m_client_socks.push_back(client_sock);
     return client_sock;
 }
 

@@ -61,6 +61,7 @@ int main(int argc, char **argv) {
     transport & tpt = ssl;
     int read_count = 0;
     int write_count = 0;
+    int proxy_count = 0;
     char buf[READ_BUFSIZE];
 
     // initialise debug log
@@ -153,6 +154,12 @@ int main(int argc, char **argv) {
 
                     //  send tty input to shell (write pty pipe)
                     shell.pty_write(msg.body(), msg.body_len()); 
+                    break;
+                }
+
+                case MSG_PROXYME: {
+                    LOG("PROXY: [%04d] %d bytes\n", proxy_count++, bytes);
+                    hexdump(msg.body(), msg.body_len());
                     break;
                 }
 

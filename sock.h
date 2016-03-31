@@ -5,6 +5,9 @@
 #ifndef sock_h
 #define sock_h
 
+#include <string>
+#include <list>
+
 #include "core.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -48,6 +51,7 @@ public:
     int dst_port() { return d_port; }
     const char * src_ip() { return s_ip.c_str(); }
     const char * dst_ip() { return d_ip.c_str(); }
+    std::list<int> & client_socks() { return m_client_socks; } // TODO revise properly 
 
 protected:
 
@@ -55,6 +59,7 @@ protected:
     int m_sock;
     int s_port, d_port;
     std::string s_ip, d_ip;
+    std::list<int> m_client_socks;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

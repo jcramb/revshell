@@ -1,6 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // vterm.cc
-// author: jcramb@gmail.com
+// // Based on libvterm by 2009 Bryan Christ
+// // and ROTE written by Bruno Takahashi C. de Oliveira.
 
 #include "vterm.h"
 

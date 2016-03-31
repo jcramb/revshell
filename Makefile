@@ -7,7 +7,7 @@ final: CXXFLAGS += -O2 -DLOG_DISABLE
 CC = g++
 INCLUDE = $(shell pkg-config --cflags glib-2.0)
 BUILD_DIR = build
-COMMON_SRC = cert.cc core.cc sock.cc ssl.cc
+COMMON_SRC = cert.cc core.cc sock.cc ssl.cc proxy.cc
 SERVER_SRC = server.cc $(COMMON_SRC) vterm.cc
 CLIENT_SRC = client.cc $(COMMON_SRC)
 SERVER_OBJ = $(SERVER_SRC:%.cc=$(BUILD_DIR)/%.o)

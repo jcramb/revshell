@@ -29,6 +29,7 @@
 #define MSG_INVALID (0)
 #define MSG_TTYKEYS (1)
 #define MSG_WNDSIZE (2)
+#define MSG_PROXYME (3)
 
 #ifndef MAX
 #define MAX(a, b) (a > b ? a : b)
