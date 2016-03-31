@@ -45,6 +45,7 @@ public:
     // server functions
     int broadcast(const char * buf, int len);
     int bind(int port);
+    int poll_accept(int timeout_ms = 0);
     int accept();
 
     // getters 
@@ -54,6 +55,13 @@ public:
     const char * src_ip() { return s_ip.c_str(); }
     const char * dst_ip() { return d_ip.c_str(); }
     const std::set<int> & client_socks() { return m_client_socks; } 
+
+    // TODO: 
+    // class still in refactoring from single client focus
+    // to multiple client support - fix artifacts of previous design
+    // i.e. dst_port() isn't valid with multiple clients
+    // group up sock/port maps for each client instead
+    // this is needed to improve proxy addressing 
 
 protected:
 

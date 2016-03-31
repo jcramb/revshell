@@ -91,6 +91,9 @@ int main(int argc, char **argv) {
     LOG("info: sending resize to client (%dx%d)\n", rows, cols);
     tpt.send(mk_resize_msg(rows, cols));
 
+    // initialise proxy
+    proxy.enable(1337, "127.0.0.1", 9447);
+
     // start server loop
     int keycode;
     char buf[256];

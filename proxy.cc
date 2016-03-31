@@ -13,16 +13,16 @@
 
 #include "core.h"
 
+#include <sys/stat.h> // remove me
+
 ////////////////////////////////////////////////////////////////////////////////
 
-proxy_header mk_proxy_header(std::string s_ip, int s_port,
-                             std::string d_ip, int d_port) {
-    proxy_header header;
-    strncpy(header.s_ip, s_ip.c_str(), sizeof(header.s_ip));
-    strncpy(header.d_ip, d_ip.c_str(), sizeof(header.d_ip));
-    header.s_port = s_port;
-    header.d_port = d_port;
-    return header;
+void set_proxy_header(proxy_header * h, std::string s_ip, int s_port, 
+                                        std::string d_ip, int d_port) {
+    strncpy(h->s_ip, s_ip.c_str(), sizeof(h->s_ip));
+    strncpy(h->d_ip, d_ip.c_str(), sizeof(h->d_ip));
+    h->s_port = s_port;
+    h->d_port = d_port;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -46,31 +46,22 @@ int proxy_listener::enable(int s_port, std::string d_ip, int d_port) {
         return -1;
     }
 
-    // bind to local port
-    tcp_stream stream;
-    LOG("proxy: binding to port %d\n", s_port);
-    if (stream.bind(s_port) < 0) {
-        stream.close();
-        return -1;
-    }
- 
-    // wait for client connection
-    int sock;
-    LOG("proxy: waiting for connection on %d\n", s_port);
-    if ((sock = stream.accept()) < 0) {
-        stream.close();
+    // bind to local port and store stream
+    std::shared_ptr<tcp_stream> stream(new tcp_stream());
+    if (stream->bind(s_port) < 0) {
+        LOG("proxy: unable to bind to port %d\n", s_port);
         return -1;
     }
 
-    // configure proxy header
-    std::string s_ip = sock_get_ip();
-    proxy_header header = mk_proxy_header(s_ip, s_port, d_ip, d_port);
-
-    // configure socket and add to listener
-    sock_set_blocking(sock, false);
+    // TODO: FIX proxy header info
+    //       d_ip and d_port should be attached to local port here
+    //       s_ip and s_port/sock should be added on connection
     m_streams.emplace(s_port, stream);
-    m_headers.emplace(s_port, header);
-    LOG("proxy: routing local:%d to %s:%d\n", s_port, d_ip.c_str(), d_port);
+
+    // add proxy route to data structures
+    LOG("proxy: routing local:%d to %s:%d\n", 
+        s_port, d_ip.c_str(), d_port);
+
     return 0;
 }
 
@@ -97,40 +88,70 @@ int proxy_listener::poll(transport & tpt, int timeout_ms) {
 
     FD_ZERO(&socks);
     for (auto & kv : m_streams) {
-        tcp_stream & stream = kv.second;
-        for (auto sock : stream.client_socks()) {
+        std::shared_ptr<tcp_stream> stream = kv.second;
+
+        // add stream socks to check for incoming connections
+        fd_max = MAX(fd_max, stream->sock());
+        FD_SET(stream->sock(), &socks);
+
+        // add all client socks to check for incoming data
+        for (int sock : stream->client_socks()) {
             fd_max = MAX(fd_max, sock);
             FD_SET(sock, &socks);
         }
     }
+
+    // poll sockets 
+    if (select(fd_max + 1, &socks, 0, 0, &tv) < 0) {
+        LOG("proxy: failed to poll sockets\n");
+        return -1;
+    }
                     
-    int result = select(fd_max + 1, &socks, 0, 0, &tv);
-    if (result > 0) {
+    // iterate through proxy streams
+    for (auto & kv : m_streams) {
+        std::shared_ptr<tcp_stream> stream = kv.second;
 
-        // iterate through proxy streams
-        for (auto & kv : m_streams) {
-        tcp_stream & stream = kv.second;
-        for (auto sock : stream.client_socks()) { 
+        // accept incoming client connections
+        if (FD_ISSET(stream->sock(), &socks)) {
+            int sock;
+            if ((sock = stream->accept()) < 0) {
+                return -1;
+            }
 
-            // check if current stream requires attention
+            // create proxy header and store
+            std::shared_ptr<proxy_header> header(new proxy_header);
+
+            // TODO: fix this as per comments above in enable
+            set_proxy_header(header.get(), sock_get_ip(), sock, "1.1.1.1", 1234);
+            m_headers.emplace(sock, header);
+
+            // configure socket and add to listener
+            sock_set_blocking(sock, false);
+            LOG("proxy: client connected (%d) on port (%d)\n", 
+                    sock, stream->src_port());
+        }
+
+        // iterate through proxy stream client connections
+        for (int sock : stream->client_socks()) { 
+
+            // does current client socket have data?
             if (FD_ISSET(sock, &socks)) {
 
                 // read proxy buffer data from local socket 
-                int bytes_ready = read(sock, buf, PROXY_BUFSIZE);
+                int bytes_ready = stream->recv(buf, PROXY_BUFSIZE, sock);
                 if (bytes_ready <= 0) {
-                    LOG("proxy:: listener failed reading from socket\n");
-                    this->close();
+                    stream->close(sock);
                     return -1;
                 }
 
                 char * src = buf;
                 int hlen = sizeof(proxy_header);
-                int s_port = stream.src_port();
+                int s_port = stream->src_port();
                 message msg(MSG_PROXYME); 
 
                 // fill message with relevant proxy header
-                proxy_header & header = m_headers[s_port];
-                memcpy(msg.body(), &header, sizeof(header)); 
+                std::shared_ptr<proxy_header> header = m_headers[sock];
+                memcpy(msg.body(), header.get(), sizeof(proxy_header)); 
 
                 while (bytes_ready > 0) {
 
@@ -139,7 +160,7 @@ int proxy_listener::poll(transport & tpt, int timeout_ms) {
                     int len = msg.body_len() - hlen; 
 
                     // fill message with proxy buffer data
-                    memcpy(msg.body() + sizeof(header), src, len); 
+                    memcpy(msg.body() + sizeof(proxy_header), src, len); 
 
                     // update read buffer info for next message (if req'd)
                     bytes_ready -= len;
@@ -153,12 +174,7 @@ int proxy_listener::poll(transport & tpt, int timeout_ms) {
                     }
                 }
             }
-        }}
-
-    } else if (result < 0 && errno != EINTR) {
-        LOG("proxy: listener failed select polling\n");
-        this->close(); 
-        return -1;
+        }
     }
 
     return 0;
@@ -178,13 +194,14 @@ int proxy_listener::handle_msg(message & msg) {
     // forward msg bytes to local client connection
     char * buf = msg.body() + sizeof(proxy_header);
     int len = msg.body_len() - sizeof(proxy_header); 
-    int bytes = m_streams[header->d_port].send(buf, len); 
+    int bytes = m_streams[header->d_port]->send(buf, len); 
     return bytes;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 void proxy_listener::close() {
+    LOG("proxy: all routes closed\n");
     m_streams.clear();
     m_headers.clear();
 }

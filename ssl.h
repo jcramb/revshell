@@ -42,7 +42,6 @@ protected:
     std::string m_opt_host;
 
     // socket wrapper
-    int m_ssl_sock;
     tcp_stream m_tcp;
 
     // openssl members

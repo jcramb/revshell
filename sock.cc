@@ -13,6 +13,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <netdb.h>
+#include <poll.h>
+
 #include <cstring>
 #include <cstdio>
 
@@ -89,17 +91,20 @@ int tcp_stream::send(const char * buf, int len, int sock) {
     } else if (m_type == SOCK_SERVER) {
         if (sock == m_sock) {
             LOG("error: attempt to send over server listening sock!\n");
+            return -1;
         } else if (sock <= 0) {
             LOG("error: attempt to send over invalid sock (%d)\n", sock);
+            return -1;
+        } else if (m_client_socks.size() == 1) {
+            sock = *m_client_socks.begin();
         }
-        return -1;
     }
 
     int bytes_sent = 0;
     while (bytes_sent < len) {
         int bytes = ::send(sock, buf + bytes_sent, len - bytes_sent, 0);
         if (bytes < 0) {
-            LOG("error: (send) %s\n", strerror(errno));
+            LOG("error: (send)[%d] %s\n", sock, strerror(errno));
             break;
         }
         bytes_sent += bytes;
@@ -121,7 +126,7 @@ int tcp_stream::recv(char * buf, int len, int sock) {
 
     int bytes = ::recv(sock, buf, len, 0);
     if (bytes < 0) {
-        LOG("error: failed to recv data\n");
+        LOG("error: (recv)[%d] (%s)\n", sock, strerror(errno));
         return -1;
     }
 
@@ -132,6 +137,7 @@ int tcp_stream::recv(char * buf, int len, int sock) {
 // clean up stream details
 
 void tcp_stream::close(int sock) {
+    LOG("tcp_stream: socket closed [m_sock %d | sock %d]\n", m_sock, sock);
 
     // are we closing a client socket?
     if (m_client_socks.find(sock) != m_client_socks.end()) {
@@ -307,7 +313,39 @@ int tcp_stream::bind(int port) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// server func - accept client connection 
+// server func - accept pending client connections (non-blocking) 
+
+int tcp_stream::poll_accept(int timeout_ms) {
+
+    // sanity check
+    if (m_type != SOCK_SERVER) {
+        LOG("error: poll_accept on non-server stream! (%d)\n", m_sock);
+        return -1;
+    }
+
+    struct pollfd fd_array;
+    fd_array.fd = m_sock;
+    fd_array.events = POLLIN;
+    int retval = poll(&fd_array, 1, 0); // 0ms wait
+    if (retval <= 0 && errno == EINTR) {
+        return 0;
+    } else if (retval <= 0) {
+        LOG("error: poll failed (%s)\n", strerror(errno));
+        return -1;
+    }
+
+    int sock;
+    if ((sock = this->accept()) < 0) {
+        return -1;
+    }
+
+    // non-blocking accepts return non-blocking client sockets
+    sock_set_blocking(sock, false);
+    return sock;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// server func - accept client connection (blocking) 
 
 int tcp_stream::accept() {
     struct sockaddr_storage client;

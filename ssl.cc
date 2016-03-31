@@ -14,9 +14,6 @@
 #include <errno.h>
 #include <netdb.h>
 
-//#include <sys/socket.h>
-//#include <resolv.h>
-//#include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
@@ -120,7 +117,6 @@ void ssl_dump_certs(SSL * ssl) {
 ssl_transport::ssl_transport() {
     m_ctx = NULL;
     m_ssl = NULL;
-    m_ssl_sock = -1;
     m_opt_host = "127.0.0.1";
     m_opt_port = 443;
 }
@@ -174,16 +170,17 @@ int ssl_transport::init(int type) {
     }
 
     // initialise connection based on whether we are the client or server
+    int sock;
     if (type == TPT_CLIENT) {
 
         // if client, connect to c2 server
         LOG("info: connecting to %s:%d\n", m_opt_host.c_str(), m_opt_port);
-        if ((m_ssl_sock = m_tcp.connect(m_opt_host, m_opt_port)) < 0) {
+        if ((sock = m_tcp.connect(m_opt_host, m_opt_port)) < 0) {
             return -1;
         }
 
         // pass socket to openssl
-        SSL_set_fd(m_ssl, m_ssl_sock);
+        SSL_set_fd(m_ssl, sock);
         if (SSL_connect(m_ssl) < 0) {
             LOG("error: ssl connect failed\n");
             return -1;
@@ -199,12 +196,12 @@ int ssl_transport::init(int type) {
 
         // accept incoming connection
         LOG("info: waiting for client...\n");
-        if ((m_ssl_sock = m_tcp.accept()) < 0) {
+        if ((sock = m_tcp.accept()) < 0) {
             return -1;
         }
 
         // pass client socket to openssl and accept the connection 
-        SSL_set_fd(m_ssl, m_ssl_sock);
+        SSL_set_fd(m_ssl, sock);
         if (SSL_accept(m_ssl) < 0) {
             LOG("error: ssl accept failed\n");
             return -1;
@@ -217,7 +214,7 @@ int ssl_transport::init(int type) {
         
     // log ssl connection info / make socket non-blocking
     LOG("info: SSL connected using cipher (%s)\n", SSL_get_cipher(m_ssl)); 
-    sock_set_blocking(m_ssl_sock, false);
+    sock_set_blocking(sock, false);
     ssl_dump_certs(m_ssl);
 
     // success!
@@ -296,7 +293,6 @@ void ssl_transport::close() {
     
     // clean up tcp stream
     m_tcp.close();
-    m_ssl_sock = -1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

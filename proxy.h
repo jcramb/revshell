@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 
 #include <map>
+#include <memory>
 #include <string>
 
 #include "core.h"
@@ -24,9 +25,9 @@ struct proxy_header {
     int s_port;
     int d_port;
 };
-
-proxy_header mk_proxy_header(std::string s_ip, int s_port,
-                             std::string d_ip, int d_port);
+    
+void set_proxy_header(proxy_header * h, std::string s_ip, int s_port, 
+                                        std::string d_ip, int d_port);
 
 ////////////////////////////////////////////////////////////////////////////////
 // tcp proxy client (downstream)
@@ -44,8 +45,8 @@ public:
     void close();
 
 protected:
-    std::map<int, tcp_stream> m_streams;
-    std::map<int, proxy_header> m_headers;
+    std::map<int, std::shared_ptr<tcp_stream>> m_streams;
+    std::map<int, std::shared_ptr<proxy_header>> m_headers;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,7 +65,7 @@ protected:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// basic tcp proxy
+// basic tcp proxy (blocking, single route connection)
 
 class tcp_proxy {
 public:

@@ -16,15 +16,18 @@ SERVER_LIB += -lutil -lncurses -lglib-2.0 -lssl -lcrypto
 CLIENT_LIB += -lutil -lssl -lcrypto
 CERTS = cert.h cert.cc
 
-.PHONY: all final mkdir mkcert clean
+MKCERT = ./bin2cc.py cert crt:ca/shell_crt.pem key:ca/shell_key.pem 
+
+.PHONY: all final mkdir clean
 
 all: mkdir server client
 final: clean mkdir server client
 
-cert.h: mkcert
-cert.cc: mkcert
-mkcert:
-	@./bin2cc.py cert crt:ca/shell_crt.pem key:ca/shell_key.pem 
+cert.h: 
+	@$(MKCERT) 
+
+cert.cc: 
+	@$(MKCERT) 
 
 server: $(CERTS) $(SERVER_OBJ)
 	@echo LINK $@ 
