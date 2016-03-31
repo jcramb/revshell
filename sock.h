@@ -6,15 +6,16 @@
 #define sock_h
 
 #include <string>
-#include <list>
+#include <set>
 
 #include "core.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // defines
 
-#define SOCK_SERVER 1
-#define SOCK_CLIENT 2
+#define SOCK_INVALID (0)
+#define SOCK_SERVER  (1)
+#define SOCK_CLIENT  (2)
 
 ////////////////////////////////////////////////////////////////////////////////
 // helper func proto's
@@ -34,14 +35,15 @@ public:
     ~tcp_stream();
 
     // common functions 
-    int send(const char * buf, int len);
-    int recv(char * buf, int len);
-    void close();
+    int send(const char * buf, int len, int sock = -1);
+    int recv(char * buf, int len, int sock = -1);
+    void close(int sock = -1);
 
     // client functions
     int connect(std::string host, int port);
 
     // server functions
+    int broadcast(const char * buf, int len);
     int bind(int port);
     int accept();
 
@@ -51,15 +53,20 @@ public:
     int dst_port() { return d_port; }
     const char * src_ip() { return s_ip.c_str(); }
     const char * dst_ip() { return d_ip.c_str(); }
-    std::list<int> & client_socks() { return m_client_socks; } // TODO revise properly 
+    const std::set<int> & client_socks() { return m_client_socks; } 
 
 protected:
 
-    // networking members
-    int m_sock;
+    // stream info
+    int m_type;
+    
+    // connection info
     int s_port, d_port;
     std::string s_ip, d_ip;
-    std::list<int> m_client_socks;
+
+    // connection state
+    int m_sock;
+    std::set<int> m_client_socks;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

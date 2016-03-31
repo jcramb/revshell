@@ -69,6 +69,7 @@ const char * sock_get_ip(std::string iface) {
 // tcp_stream ctors / dtors
 
 tcp_stream::tcp_stream() {
+    m_type = SOCK_INVALID;
     m_sock = -1;
     s_port = d_port = -1;
     s_ip = sock_get_ip();
@@ -79,12 +80,24 @@ tcp_stream::~tcp_stream() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// SSL implementation to send transport msg's 
+// common func - send binary buffer over a tcp socket
 
-int tcp_stream::send(const char * buf, int len) {
+int tcp_stream::send(const char * buf, int len, int sock) {
+
+    if (m_type == SOCK_CLIENT) {
+        sock = m_sock;
+    } else if (m_type == SOCK_SERVER) {
+        if (sock == m_sock) {
+            LOG("error: attempt to send over server listening sock!\n");
+        } else if (sock <= 0) {
+            LOG("error: attempt to send over invalid sock (%d)\n", sock);
+        }
+        return -1;
+    }
+
     int bytes_sent = 0;
     while (bytes_sent < len) {
-        int bytes = ::send(m_sock, buf + bytes_sent, len - bytes_sent, 0);
+        int bytes = ::send(sock, buf + bytes_sent, len - bytes_sent, 0);
         if (bytes < 0) {
             LOG("error: (send) %s\n", strerror(errno));
             break;
@@ -97,8 +110,20 @@ int tcp_stream::send(const char * buf, int len) {
 ////////////////////////////////////////////////////////////////////////////////
 // common func - receive all bytes waiting on socket
 
-int tcp_stream::recv(char * buf, int len) {
-    int bytes;
+int tcp_stream::recv(char * buf, int len, int sock) {
+
+    if (m_type == SOCK_CLIENT) {
+        sock = m_sock;
+    } else if (m_type == SOCK_SERVER && sock <= 0) {
+        LOG("error: attempt to send over invalid sock (%d)\n", sock);
+        return -1;
+    }
+
+    int bytes = ::recv(sock, buf, len, 0);
+    if (bytes < 0) {
+        LOG("error: failed to recv data\n");
+        return -1;
+    }
 
     return bytes;
 }
@@ -106,13 +131,34 @@ int tcp_stream::recv(char * buf, int len) {
 ////////////////////////////////////////////////////////////////////////////////
 // clean up stream details
 
-void tcp_stream::close() {
-    if (m_sock > 0) {
-        ::close(m_sock);
+void tcp_stream::close(int sock) {
+
+    // are we closing a client socket?
+    if (m_client_socks.find(sock) != m_client_socks.end()) {
+        m_client_socks.erase(sock);
+        ::close(sock);
+
+    // otherwise, are we meant to close everything?
+    } else if (m_sock == sock || sock == -1) {
+
+        if (m_sock > 0) {
+            ::close(m_sock);
+            m_sock = -1;
+        }
+
+        for (auto sock : m_client_socks) {
+            ::close(sock);
+        }
+
+        m_type = SOCK_INVALID;
+        m_client_socks.clear();
+        s_port = d_port = -1;
+        d_ip = "";
+    
+    // we may be trying to close an already closed socket if we get here
+    } else {
+        LOG("error: attempt to close invalid socket (%d)\n", sock);
     }
-    m_sock = -1;
-    s_port = d_port = -2;
-    d_ip = "";
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,6 +212,7 @@ int tcp_stream::connect(std::string host, int port) {
         // success!
         d_ip = host;
         d_port = port;
+        m_type = SOCK_CLIENT;
         LOG("info: connected to %s:%d\n", d_ip.c_str(), d_port); 
         break;
     }
@@ -173,6 +220,28 @@ int tcp_stream::connect(std::string host, int port) {
     // clean up address info
     freeaddrinfo(server);
     return index != NULL ? m_sock : -1;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// server func - send data buffer across all active connections
+
+int tcp_stream::broadcast(const char * buf, int len) {
+
+    // verify that this is a server stream 
+    if (m_type != SOCK_SERVER) {
+        LOG("error: broadcast on a non-server tcp stream\n");
+        return -1;
+    }
+
+    int err = 0;
+    for (auto sock : m_client_socks) {
+        int bytes = this->send(buf, len, sock);
+        if (bytes < 0) {
+            LOG("error: broadcast failed for sock (%d)[%d]\n", sock, bytes);
+            err = bytes;
+        }
+    }
+    return err;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -229,6 +298,7 @@ int tcp_stream::bind(int port) {
 
         // success!
         s_port = port;
+        m_type = SOCK_SERVER;
         break;
     }
     
@@ -263,7 +333,7 @@ int tcp_stream::accept() {
     LOG("info: connection from %s:%d\n", d_ip.c_str(), d_port); 
 
     // store client socket
-    m_client_socks.push_back(client_sock);
+    m_client_socks.emplace(client_sock);
     return client_sock;
 }
 
