@@ -43,6 +43,9 @@ static inline void * get_in_addr(struct sockaddr * sa) {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// return ip address of local system's default interface
+
 const char * sock_get_ip(std::string iface) {
     struct ifaddrs *ifaddrs, *index;
     static char addr_str[INET_ADDRSTRLEN];
@@ -68,13 +71,23 @@ const char * sock_get_ip(std::string iface) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// construct sock_info containing details for a socket connection
+
+sock_info::sock_info(std::string _s_ip, int _s_port, 
+                     std::string _d_ip, int _d_port) {
+    strncpy(s_ip, _s_ip.c_str(), sizeof(s_ip));
+    strncpy(d_ip, _d_ip.c_str(), sizeof(d_ip));
+    s_port = _s_port;
+    d_port = _d_port;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // tcp_stream ctors / dtors
 
 tcp_stream::tcp_stream() {
     m_type = SOCK_INVALID;
+    m_connlimit = -1;
     m_sock = -1;
-    s_port = d_port = -1;
-    s_ip = sock_get_ip();
 }
 
 tcp_stream::~tcp_stream() {
@@ -142,6 +155,7 @@ void tcp_stream::close(int sock) {
     // are we closing a client socket?
     if (m_client_socks.find(sock) != m_client_socks.end()) {
         m_client_socks.erase(sock);
+        m_sockinfo.erase(sock);
         ::close(sock);
 
     // otherwise, are we meant to close everything?
@@ -158,8 +172,7 @@ void tcp_stream::close(int sock) {
 
         m_type = SOCK_INVALID;
         m_client_socks.clear();
-        s_port = d_port = -1;
-        d_ip = "";
+        m_sockinfo.clear();
     
     // we may be trying to close an already closed socket if we get here
     } else {
@@ -214,18 +227,38 @@ int tcp_stream::connect(std::string host, int port) {
                   get_in_addr((struct sockaddr*)index->ai_addr),
                   addr_str,
                   sizeof(addr_str));
+    
+        // get local port assignment (not IPv6 friendly)
+        struct sockaddr_in sin;
+        socklen_t len = sizeof(sin);
+        if (getsockname(m_sock, (struct sockaddr *)&sin, &len) < 0) {
+            LOG("error: getsockname (%s)\n", strerror(errno));
+        }
+        int s_port = ntohs(sin.sin_port);
 
         // success!
-        d_ip = host;
-        d_port = port;
         m_type = SOCK_CLIENT;
-        LOG("info: connected to %s:%d\n", d_ip.c_str(), d_port); 
+        LOG("info: connected to %s:%d\n", addr_str, port); 
+        std::shared_ptr<sock_info> si;
+        si.reset(new sock_info(sock_get_ip(), s_port, addr_str, port));
+        m_sockinfo[m_sock] = si;
         break;
     }
 
     // clean up address info
     freeaddrinfo(server);
     return index != NULL ? m_sock : -1;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// server func - limit number of possible client connections
+
+void tcp_stream::conn_limit(int limit) {
+    if (m_type != SOCK_SERVER) {
+        LOG("error: conn_limit invalid on non-server streams\n");
+    } else {
+        m_connlimit = limit;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -255,6 +288,7 @@ int tcp_stream::broadcast(const char * buf, int len) {
 
 int tcp_stream::bind(int port) {
     struct addrinfo hints, *ai, *index;
+    char addr_str[INET6_ADDRSTRLEN];
     int ai_result;
     
     // configure hints for tcp connection
@@ -303,8 +337,20 @@ int tcp_stream::bind(int port) {
         } 
 
         // success!
-        s_port = port;
         m_type = SOCK_SERVER;
+        
+        // obtain presentable address of server
+        inet_ntop(index->ai_family,
+                  get_in_addr((struct sockaddr*)index->ai_addr),
+                  addr_str,
+                  sizeof(addr_str));
+
+        // store sock info
+        std::shared_ptr<sock_info> si;
+        si.reset(new sock_info(sock_get_ip(), port));
+        strncpy(si->s_ip, addr_str, sizeof(si->s_ip)); 
+        si->s_port = port;
+        m_sockinfo[m_sock] = si;
         break;
     }
     
@@ -336,7 +382,7 @@ int tcp_stream::poll_accept(int timeout_ms) {
 
     int sock;
     if ((sock = this->accept()) < 0) {
-        return -1;
+        return sock;
     }
 
     // non-blocking accepts return non-blocking client sockets
@@ -353,6 +399,11 @@ int tcp_stream::accept() {
     socklen_t len = sizeof(client);
     int client_sock;
 
+    // check that we're respecting the connection limit
+    if (m_connlimit != -1 && m_client_socks.size() >= m_connlimit) {
+        return SOCK_LIMIT;
+    }
+
     // wait for client to connect
     if ((client_sock = ::accept(m_sock, (struct sockaddr*)&client, &len)) < 0) {
       LOG("error: (accept) %s\n", strerror(errno));
@@ -363,16 +414,69 @@ int tcp_stream::accept() {
     inet_ntop(client.ss_family,
               get_in_addr((struct sockaddr*)&client),
               client_ip, 
-              INET6_ADDRSTRLEN);
+              sizeof(client_ip));
 
-    // store stream info
-    d_ip = client_ip;
-    d_port = ntohs(((struct sockaddr_in*)&client)->sin_port); 
-    LOG("info: connection from %s:%d\n", d_ip.c_str(), d_port); 
+    int s_port = m_sockinfo[m_sock]->s_port;
+    int d_port = ntohs(((struct sockaddr_in*)&client)->sin_port); 
+    LOG("info: connection %s:%d to %s:%d\n", 
+            client_ip, d_port, src_ip(), src_port()); 
+
+    // success!
+    std::shared_ptr<sock_info> si;
+    si.reset(new sock_info(sock_get_ip(), s_port, client_ip, d_port));
+    m_sockinfo[m_sock] = si;
 
     // store client socket
     m_client_socks.emplace(client_sock);
     return client_sock;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// getter funcs - return sock information 
+
+const sock_info * tcp_stream::sockinfo(int sock) {
+    if (sock == -1) sock = m_sock;
+    if (m_sockinfo.find(sock) == m_sockinfo.end()) {
+        LOG("error: (sockinfo) invalid sock\n");
+        return NULL;
+    }
+    return m_sockinfo[sock].get();
+}
+
+const char * tcp_stream::src_ip(int sock) {
+    if (sock == -1) sock = m_sock;
+    if (m_sockinfo.find(sock) == m_sockinfo.end()) {
+        LOG("error: (src_ip) invalid sock\n");
+        return NULL;
+    }
+    return m_sockinfo[sock]->s_ip;
+}
+
+const char * tcp_stream::dst_ip(int sock) {
+    if (sock == -1) sock = m_sock;
+    if (m_sockinfo.find(sock) == m_sockinfo.end()) {
+        LOG("error: (dst_ip) invalid sock\n");
+        return NULL;
+    }
+    return m_sockinfo[sock]->d_ip;
+}
+
+int tcp_stream::src_port(int sock) {
+    if (sock == -1) sock = m_sock;
+    if (m_sockinfo.find(sock) == m_sockinfo.end()) {
+        LOG("error: (src_port) invalid sock\n");
+        return -1;
+    }
+    return m_sockinfo[sock]->s_port;
+}
+
+int tcp_stream::dst_port(int sock) {
+    if (sock == -1) sock = m_sock;
+    if (m_sockinfo.find(sock) == m_sockinfo.end()) {
+        LOG("error: (dst_port) invalid sock\n");
+        return -1;
+    }
+    return m_sockinfo[sock]->d_port;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

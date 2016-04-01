@@ -93,6 +93,7 @@ int main(int argc, char **argv) {
 
     // initialise proxy
     proxy.enable(1337, "127.0.0.1", 9447);
+    proxy.enable(9001, "192.168.1.112", 9002);
 
     // start server loop
     int keycode;

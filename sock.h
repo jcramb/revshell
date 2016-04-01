@@ -5,8 +5,7 @@
 #ifndef sock_h
 #define sock_h
 
-#include <string>
-#include <set>
+#include <netinet/in.h>
 
 #include "core.h"
 
@@ -16,13 +15,24 @@
 #define SOCK_INVALID (0)
 #define SOCK_SERVER  (1)
 #define SOCK_CLIENT  (2)
+#define SOCK_LIMIT   (-3)
 
 ////////////////////////////////////////////////////////////////////////////////
-// helper func proto's
+// helper func / type proto's
 
 const char * sock_get_ip(std::string iface = "");
 int sock_set_blocking(int fd, bool blocking = true);
 bool sock_is_blocking(int fd);
+
+struct sock_info {
+    char s_ip[INET6_ADDRSTRLEN];
+    char d_ip[INET6_ADDRSTRLEN];
+    int s_port;
+    int d_port;
+
+    sock_info(std::string s_ip = "", int s_port = -1, 
+              std::string d_ip = "", int d_port = -1);
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // tcp socket
@@ -43,6 +53,7 @@ public:
     int connect(std::string host, int port);
 
     // server functions
+    void conn_limit(int limit = -1);
     int broadcast(const char * buf, int len);
     int bind(int port);
     int poll_accept(int timeout_ms = 0);
@@ -50,31 +61,23 @@ public:
 
     // getters 
     int sock() { return m_sock; }
-    int src_port() { return s_port; }
-    int dst_port() { return d_port; }
-    const char * src_ip() { return s_ip.c_str(); }
-    const char * dst_ip() { return d_ip.c_str(); }
     const std::set<int> & client_socks() { return m_client_socks; } 
-
-    // TODO: 
-    // class still in refactoring from single client focus
-    // to multiple client support - fix artifacts of previous design
-    // i.e. dst_port() isn't valid with multiple clients
-    // group up sock/port maps for each client instead
-    // this is needed to improve proxy addressing 
+    const sock_info * sockinfo(int sock = -1);
+    const char * src_ip(int sock = -1);
+    const char * dst_ip(int sock = -1);
+    int src_port(int sock = -1);
+    int dst_port(int sock = -1);
 
 protected:
 
     // stream info
     int m_type;
+    int m_connlimit;
     
-    // connection info
-    int s_port, d_port;
-    std::string s_ip, d_ip;
-
     // connection state
     int m_sock;
     std::set<int> m_client_socks;
+    std::map<int, std::shared_ptr<sock_info>> m_sockinfo;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

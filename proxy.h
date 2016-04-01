@@ -5,29 +5,10 @@
 #ifndef proxy_h
 #define proxy_h
 
-#include <netinet/in.h>
-
-#include <map>
-#include <memory>
-#include <string>
-
 #include "core.h"
 #include "sock.h" 
 
 #define PROXY_BUFSIZE 8192
-
-////////////////////////////////////////////////////////////////////////////////
-// message helper functions
-
-struct proxy_header {
-    char s_ip[INET6_ADDRSTRLEN];
-    char d_ip[INET6_ADDRSTRLEN];
-    int s_port;
-    int d_port;
-};
-    
-void set_proxy_header(proxy_header * h, std::string s_ip, int s_port, 
-                                        std::string d_ip, int d_port);
 
 ////////////////////////////////////////////////////////////////////////////////
 // tcp proxy client (downstream)
@@ -46,7 +27,7 @@ public:
 
 protected:
     std::map<int, std::shared_ptr<tcp_stream>> m_streams;
-    std::map<int, std::shared_ptr<proxy_header>> m_headers;
+    std::map<int, std::shared_ptr<sock_info>> m_headers;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
