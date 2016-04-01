@@ -17,182 +17,340 @@
 ////////////////////////////////////////////////////////////////////////////////
 // ctors / dtors
 
-proxy_listener::proxy_listener() {
-
+transport_proxy::transport_proxy() {
 }
 
-proxy_listener::~proxy_listener() {
-
+transport_proxy::~transport_proxy() {
+    this->close();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// add a proxy route from local port to remote ip/port
 
-int proxy_listener::enable(int s_port, std::string d_ip, int d_port) {
+int transport_proxy::enable(int s_port, std::string d_ip, int d_port) {
 
     // can only have one proxy route per port
-    if (m_streams.find(s_port) != m_streams.end()) {
+    if (m_downstreams.find(s_port) != m_downstreams.end()) {
         LOG("proxy: (error) already active for port %d\n", s_port);
         return -1;
     }
 
-    // bind to local port and store stream
+    // bind tcp listener to desired port
     std::shared_ptr<tcp_stream> stream(new tcp_stream());
     if (stream->bind(s_port) < 0) {
         LOG("proxy: unable to bind to port %d\n", s_port);
         return -1;
     }
 
-    // initialise proxy header information
+    // configure proxy stream and setup header
+    stream->conn_limit(1);
     std::shared_ptr<sock_info> header(
         new sock_info(stream->src_ip(), s_port, d_ip, d_port)
     );
 
-    // only makes sense to proxy a single connection
-    stream->conn_limit(1);
-
     // add proxy route to data structures
     m_headers[s_port] = header;
-    m_streams[s_port] = stream;
-    LOG("proxy: routing %s:%d to %s:%d\n", 
-        stream->src_ip(), s_port, d_ip.c_str(), d_port);
+    m_downstreams[s_port] = stream;
+    m_state[s_port] = PROXY_LISTENING;
+    LOG("proxy: adding route[%d] %s:%d to %s:%d\n", 
+        stream->sock(), stream->src_ip(), s_port, d_ip.c_str(), d_port);
 
     return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// remove a proxy route for a given port
 
-void proxy_listener::disable(int s_port) {
-    m_streams.erase(s_port);
+void transport_proxy::disable(int s_port) {
+    LOG("proxy: removing route (port %d)\n", s_port);
+    m_downstreams.erase(s_port);
     m_headers.erase(s_port);
+    m_state.erase(s_port);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// helper func - build fd_set of proxy sockets that need polling
 
-int proxy_listener::poll(transport & tpt, int timeout_ms) {
-    if (m_streams.empty()) return 0;
-    char buf[PROXY_BUFSIZE];
+void transport_proxy::build_sockset(fd_set & socks, int & fd_max) {
 
-    fd_set socks;
-    int fd_max = -1;
-    int bytes;
+    // add downstreams to socket set
+    for (auto & kv : m_downstreams) {
+        std::shared_ptr<tcp_stream> & stream = kv.second;
+        int sock = stream->sock();
+        int s_port = stream->src_port();
 
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = timeout_ms * 1000;
-
-    FD_ZERO(&socks);
-    for (auto & kv : m_streams) {
-        std::shared_ptr<tcp_stream> stream = kv.second;
-
-        // add stream socks to check for incoming connections
-        fd_max = MAX(fd_max, stream->sock());
-        FD_SET(stream->sock(), &socks);
-
-        // add all client socks to check for incoming data
-        for (int sock : stream->client_socks()) {
+        // add listener socks to check for incoming connections
+        if (m_state[s_port] == PROXY_LISTENING) {
             fd_max = MAX(fd_max, sock);
             FD_SET(sock, &socks);
+        
+        // add client socks to check for incoming data
+        } else if (m_state[s_port] == PROXY_ESTABLISHED) {
+            for (int sock : stream->client_socks()) {
+                fd_max = MAX(fd_max, sock);
+                FD_SET(sock, &socks);
+            }
         }
     }
 
-    // poll sockets 
+    // add upstreams to socket set
+    for (auto & kv : m_upstreams) {
+        std::shared_ptr<tcp_stream> & stream = kv.second;
+        int sock = stream->sock();
+
+        // add sock to check for incoming data
+        fd_max = MAX(fd_max, sock);
+        FD_SET(sock, &socks);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// helper func - transport tcp proxy data via messages
+
+int transport_proxy::dispatch_data(transport & tpt, int sock, int s_port, 
+                                   std::shared_ptr<tcp_stream> & stream) { 
+    char buf[PROXY_BUFSIZE];
+
+    // read proxy buffer data from local socket 
+    int bytes_ready = stream->recv(buf, sizeof(buf), sock);
+    if (bytes_ready <= 0) {
+        this->close(s_port);
+        return -1;
+    }
+
+    char * src = buf;
+    int header_len = sizeof(sock_info);
+    message msg(MSG_PROXY_DATA); 
+
+    // add proxy header information
+    std::shared_ptr<sock_info> & header = m_headers[s_port];
+
+    // TODO: move this into a get_header func for centralised error handling
+    if (header.get() == NULL) {
+        LOG("proxy: invalid header for port %d\n", s_port);
+        return -1;
+    }
+
+    strncpy(header->s_ip, stream->dst_ip(), sizeof(header->s_ip));
+    memcpy(msg.body(), header.get(),  header_len);
+
+    // break data into multiple msgs if required
+    while (bytes_ready > 0) {
+
+        // determine size of message
+        msg.resize(header_len + bytes_ready);
+        int len = msg.body_len() - header_len; 
+
+        // fill message with proxy buffer data
+        memcpy(msg.body() + header_len, src, len); 
+
+        // update read buffer info for next message (if req'd)
+        bytes_ready -= len;
+        src += len;
+
+        // relay proxy msg to remote system
+        if (tpt.send(msg) < 0) {
+            LOG("proxy: failed to dispatch message (port %d)\n", s_port);
+            return -1;
+        }
+    }
+
+    return (int)(src - buf);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// accept incoming connections and forward outgoing traffic (non-blocking)
+
+int transport_proxy::poll(transport & tpt, int timeout_ms) {
+    if (m_downstreams.empty() && m_upstreams.empty()) return 0;
+   
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 1000 * timeout_ms;
+
+    // compile set of sockets that require polling
+    fd_set socks;
+    int fd_max = -1;
+    FD_ZERO(&socks);
+    build_sockset(socks, fd_max);
+
+    // poll status of socket set
     if (select(fd_max + 1, &socks, 0, 0, &tv) < 0) {
-        LOG("proxy: failed to poll sockets\n");
+        LOG("proxy: failed to poll socket set\n");
+        // TODO: add handling to close problem sockets and try again
+        //       otherwise they will never be removed and will ruin
+        //       any attempt to continue handling other proxy streams
         return -1;
     }
                     
-    // iterate through proxy streams
-    for (auto & kv : m_streams) {
-        std::shared_ptr<tcp_stream> stream = kv.second;
+    // check downstreams
+    int err = 0;
+    for (auto & kv : m_downstreams) {
+        std::shared_ptr<tcp_stream> & stream = kv.second;
+        int s_port = stream->src_port();
 
         // accept incoming client connections
         if (FD_ISSET(stream->sock(), &socks)) {
-            int sock = stream->accept();
-            if (sock != SOCK_LIMIT && sock < 0) {
-                return -1;
-            } else if (sock != SOCK_LIMIT) {
+            int client_sock = stream->accept();
+            if (client_sock > 0) {
 
-                // configure socket and add to listener
-                sock_set_blocking(sock, false);
+                // proxy requires client socket to be non-blocking
+                sock_set_blocking(client_sock, false);
+
+                // update state of proxy connection
+                m_state[s_port] = PROXY_PENDING;
                 LOG("proxy: client connected (%d) on port (%d)\n", 
-                        sock, stream->src_port());
+                        client_sock, s_port);
+                
+                // establish proxy connection upstream
+                message msg(MSG_PROXY_INIT, sizeof(sock_info)); 
+                std::shared_ptr<sock_info> & header = m_headers[s_port];
+                memcpy(msg.body(), header.get(), sizeof(sock_info));
+                if (tpt.send(msg) < 0) {
+                    err = -1;
+                }
+
+                // TODO: add timeout to pending proxy connections
             }
         }
 
         // iterate through proxy stream client connections
         for (int sock : stream->client_socks()) { 
-
-            // does current client socket have data?
-            if (FD_ISSET(sock, &socks)) {
-
-                // read proxy buffer data from local socket 
-                int bytes_ready = stream->recv(buf, PROXY_BUFSIZE, sock);
-                if (bytes_ready <= 0) {
-                    stream->close(sock);
-                    return -1;
-                }
-
-                char * src = buf;
-                int hlen = sizeof(sock_info);
-                int s_port = stream->src_port();
-                message msg(MSG_PROXYME); 
-
-                // add proxy header information
-                std::shared_ptr<sock_info> header = m_headers[s_port];
-                strncpy(header->s_ip, stream->dst_ip(), sizeof(header->s_ip));
-                memcpy(msg.body(), header.get(),  hlen);
-
-                while (bytes_ready > 0) {
-
-                    // determine size of message
-                    msg.resize(hlen + bytes_ready);
-                    int len = msg.body_len() - hlen; 
-
-                    // fill message with proxy buffer data
-                    memcpy(msg.body() + hlen, src, len); 
-
-                    // update read buffer info for next message (if req'd)
-                    bytes_ready -= len;
-                    src += len;
-
-                    // relay proxy msg to remote system
-                    if (tpt.send(msg) < 0) {
-                        LOG("proxy: failed to deliver message!\n");
-                        this->close();
-                        return -1;
-                    }
-                }
+            if (FD_ISSET(sock, &socks) && 
+                dispatch_data(tpt, sock, s_port, stream) < 0) {
+                err = -1;
+                continue;
             }
         }
     }
-
-    return 0;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-int proxy_listener::handle_msg(message & msg) {
-    sock_info * header = (sock_info*)msg.body();
     
-    // check that the message relates to a valid route
-    if (m_streams.find(header->d_port) == m_streams.end()) {
-        LOG("proxy: message for invalid downstream port\n");
-        return -1;
+    // check upstreams
+    for (auto & kv : m_upstreams) {
+        std::shared_ptr<tcp_stream> & stream = kv.second;
+        int sock = stream->sock();
+        if (FD_ISSET(sock, &socks) && 
+            dispatch_data(tpt, sock, kv.first, stream) < 0) {
+            LOG("reading sock %d\n", sock);
+            err = -1;
+            continue;
+        }
     }
 
-    // forward msg bytes to local client connection
-    char * buf = msg.body() + sizeof(sock_info);
-    int len = msg.body_len() - sizeof(sock_info); 
-    int bytes = m_streams[header->d_port]->send(buf, len); 
-    return bytes;
+    return err;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// process incoming message from proxy peer
 
-void proxy_listener::close() {
-    LOG("proxy: all routes closed\n");
-    m_streams.clear();
-    m_headers.clear();
+int transport_proxy::handle_msg(transport & tpt, message & msg) {
+    int err = 0;
+    switch (msg.type()) {
+
+        case MSG_PROXY_INIT: {
+
+            // create new tcp stream
+            std::shared_ptr<tcp_stream> stream(new tcp_stream());
+            sock_info * header = (sock_info*)msg.body();
+
+            // try to establish upstream connection 
+            int sock = stream->connect(header->d_ip, header->d_port); 
+            int msg_type = (sock > 0) ? MSG_PROXY_PASS : MSG_PROXY_FAIL;
+            int s_port = header->s_port;
+            int d_port = header->d_port;
+
+            // construct response message and send downstream 
+            message response(msg_type, sizeof(int));
+            int * port = (int*)response.body();
+            *port = s_port;
+
+            if (sock < 0) {
+                LOG("proxy: upstream connection to %s:%d failed for (%d)\n",
+                    header->d_ip, d_port, s_port); 
+                err = -1;
+            } else {
+    
+                // create header information
+                std::shared_ptr<sock_info> new_header(
+                    new sock_info(header->d_ip, d_port, 
+                                  header->s_ip, s_port)
+                );
+
+                // add upstream and it's header to proxy
+                m_headers[d_port] = new_header;
+                m_upstreams[d_port] = stream;
+                LOG("proxy: new upstream connection to %s:%d for (%d)\n",
+                    header->d_ip, d_port, s_port); 
+            }
+
+            tpt.send(response);
+            break;
+        }
+
+        case MSG_PROXY_PASS: {
+            int s_port = *((int*)msg.body());
+            m_state[s_port] = PROXY_ESTABLISHED;
+            LOG("proxy: upstream connection established (port %d)\n", s_port);
+            break;
+        }
+        
+        case MSG_PROXY_FAIL: {
+            int s_port = *((int*)msg.body());
+            LOG("proxy: upstream connection failed (port %d)\n", s_port);
+            this->close(s_port);
+            break;
+        }
+        
+        case MSG_PROXY_DATA: {
+
+            // extract info from message
+            sock_info * header = (sock_info*)msg.body();
+            char * buf = msg.body() + sizeof(*header);
+            int len = msg.body_len() - sizeof(*header); 
+            int d_port = header->d_port;
+            int bytes;
+
+            // check that the message relates to a valid route
+            if (m_downstreams.find(d_port) != m_downstreams.end()) {
+                LOG("proxy: delivering downstream data to %d\n", d_port);
+                bytes = m_downstreams[d_port]->send(buf, len); 
+
+            } else if (m_upstreams.find(d_port) != m_upstreams.end()) {
+                LOG("proxy: delivering upstream data to %d\n", d_port);
+                bytes = m_upstreams[d_port]->send(buf, len); 
+            }
+
+            break;
+        }
+    }
+
+    return err;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// shutdown the proxy
+
+void transport_proxy::close(int s_port) {
+    if (s_port > 0) {
+
+        if (m_upstreams.find(s_port) != m_upstreams.end()) {
+            m_upstreams.erase(s_port);
+            m_headers.erase(s_port);
+            m_state.erase(s_port); // upstreams don't have state atm
+            LOG("proxy: closed upstream (port %d)\n", s_port);
+        }
+        if (m_downstreams.find(s_port) != m_downstreams.end()) {
+            m_state[s_port] = PROXY_LISTENING;
+            m_downstreams[s_port]->disconnect_clients();
+            LOG("proxy: closed downstream (port %d)\n", s_port);
+        }
+
+    } else {
+        LOG("proxy: shutting down, closing all streams\n");
+        m_downstreams.clear();
+        m_upstreams.clear();
+        m_headers.clear();
+        m_state.clear();
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -8,41 +8,35 @@
 #include "core.h"
 #include "sock.h" 
 
-#define PROXY_BUFSIZE 8192
+#define PROXY_BUFSIZE     (8192)
+#define PROXY_LISTENING   (1)
+#define PROXY_PENDING     (2)
+#define PROXY_ESTABLISHED (3)
 
 ////////////////////////////////////////////////////////////////////////////////
-// tcp proxy client (downstream)
+// tcp proxy routed through a transport module
 
-class proxy_listener {
+class transport_proxy {
 public:
-    proxy_listener();
-    ~proxy_listener();
+    transport_proxy();
+    ~transport_proxy();
 
     int enable(int s_port, std::string d_ip, int d_port);
     void disable(int s_port);
 
     int poll(transport & tpt, int timeout_ms = 0);
-    int handle_msg(message & msg);
-    void close();
+    int handle_msg(transport & tpt, message & msg);
+    void close(int s_port = -1);
 
 protected:
-    std::map<int, std::shared_ptr<tcp_stream>> m_streams;
+    std::map<int, std::shared_ptr<tcp_stream>> m_upstreams;
+    std::map<int, std::shared_ptr<tcp_stream>> m_downstreams;
     std::map<int, std::shared_ptr<sock_info>> m_headers;
-};
+    std::map<int, int> m_state;
 
-////////////////////////////////////////////////////////////////////////////////
-// tcp proxy server (upstream)
-
-class proxy_dispatch {
-public:
-    proxy_dispatch();
-    ~proxy_dispatch();
-
-    int poll(int timeout_ms = 0);
-    int handle_msg(message & msg);
-    void close();
-
-protected:
+    void build_sockset(fd_set & socks, int & fd_max);
+    int dispatch_data(transport & tpt, int sock, int s_port,
+                      std::shared_ptr<tcp_stream> & stream);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -62,9 +62,10 @@ int main(int argc, char **argv) {
     terminal tty;
     ssl_transport ssl;
     transport & tpt = ssl;
-    proxy_listener proxy;
+    transport_proxy proxy;
     int read_count = 0;
     int write_count = 0;
+    int proxy_count = 0;
     int rows, cols;
 
     // initialise debug log
@@ -91,7 +92,7 @@ int main(int argc, char **argv) {
     LOG("info: sending resize to client (%dx%d)\n", rows, cols);
     tpt.send(mk_resize_msg(rows, cols));
 
-    // initialise proxy
+    // initialise proxy with test routes
     proxy.enable(1337, "127.0.0.1", 9447);
     proxy.enable(9001, "192.168.1.112", 9002);
 
@@ -111,13 +112,31 @@ int main(int argc, char **argv) {
             LOG("fatal: transport failure\n");
             break;
         } else if (bytes != TPT_EMPTY) {
-            
-            // log output to file
-            LOG("RD: [%04d] %d bytes\n", read_count++, msg.body_len());
-            hexdump(msg.body(), msg.body_len());
 
-            // render output in tty emulator
-            tty.render(msg.body(), msg.body_len());
+            // handle message based on type
+            switch (msg.type()) {
+
+                case MSG_RVSHELL: {
+            
+                    // log output to file
+                    LOG("RD: [%04d] %d bytes\n", read_count++, msg.body_len());
+                    hexdump(msg.body(), msg.body_len());
+
+                    // render output in tty emulator
+                    tty.render(msg.body(), msg.body_len());
+                    break;
+                } 
+
+                case MSG_PROXY_INIT:
+                case MSG_PROXY_PASS:
+                case MSG_PROXY_FAIL:
+                case MSG_PROXY_DATA: {
+                    LOG("PROXY: [%04d] %d bytes\n", proxy_count++, bytes);
+                    hexdump(msg.body(), msg.body_len());
+                    proxy.handle_msg(ssl, msg);
+                    break;
+                }
+            }
         }
 
         // check for input from tty emulator (non-blocking)
@@ -143,7 +162,7 @@ int main(int argc, char **argv) {
             } else {
 
                 // send tty input to client shell
-                message msg(MSG_TTYKEYS, strlen(buf));
+                message msg(MSG_RVSHELL, strlen(buf));
                 memcpy(msg.body(), buf, strlen(buf));
                 tpt.send(msg);
             }

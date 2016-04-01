@@ -105,7 +105,7 @@ int tcp_stream::send(const char * buf, int len, int sock) {
         if (sock == m_sock) {
             LOG("error: attempt to send over server listening sock!\n");
             return -1;
-        } else if (sock <= 0) {
+        } else if (sock <= 0 && m_client_socks.size() > 1) {
             LOG("error: attempt to send over invalid sock (%d)\n", sock);
             return -1;
         } else if (m_client_socks.size() == 1) {
@@ -133,7 +133,7 @@ int tcp_stream::recv(char * buf, int len, int sock) {
     if (m_type == SOCK_CLIENT) {
         sock = m_sock;
     } else if (m_type == SOCK_SERVER && sock <= 0) {
-        LOG("error: attempt to send over invalid sock (%d)\n", sock);
+        LOG("error: attempt to recv over invalid sock (%d)\n", sock);
         return -1;
     }
 
@@ -150,7 +150,7 @@ int tcp_stream::recv(char * buf, int len, int sock) {
 // clean up stream details
 
 void tcp_stream::close(int sock) {
-    LOG("tcp_stream: socket closed [m_sock %d | sock %d]\n", m_sock, sock);
+    LOG("tcp_stream: socket closed [m_sock %2d | sock %2d]\n", m_sock, sock);
 
     // are we closing a client socket?
     if (m_client_socks.find(sock) != m_client_socks.end()) {
@@ -238,7 +238,7 @@ int tcp_stream::connect(std::string host, int port) {
 
         // success!
         m_type = SOCK_CLIENT;
-        LOG("info: connected to %s:%d\n", addr_str, port); 
+        LOG("info: [%d] connected to %s:%d\n", m_sock, addr_str, port); 
         std::shared_ptr<sock_info> si;
         si.reset(new sock_info(sock_get_ip(), s_port, addr_str, port));
         m_sockinfo[m_sock] = si;
@@ -259,6 +259,17 @@ void tcp_stream::conn_limit(int limit) {
     } else {
         m_connlimit = limit;
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// server func - disconnect all client connections
+
+void tcp_stream::disconnect_clients() {
+    for (int sock : m_client_socks) {
+        this->close(sock);
+        m_sockinfo.erase(sock);
+    }
+    m_client_socks.clear();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -401,6 +412,7 @@ int tcp_stream::accept() {
 
     // check that we're respecting the connection limit
     if (m_connlimit != -1 && m_client_socks.size() >= m_connlimit) {
+        LOG("error: connlimit rejection (%d)\n", m_sock);
         return SOCK_LIMIT;
     }
 

@@ -30,9 +30,12 @@
 #define LOG_ECHO (1<<2)
 
 #define MSG_INVALID (0)
-#define MSG_TTYKEYS (1)
+#define MSG_RVSHELL (1)
 #define MSG_WNDSIZE (2)
-#define MSG_PROXYME (3)
+#define MSG_PROXY_INIT (3)
+#define MSG_PROXY_PASS (4)
+#define MSG_PROXY_FAIL (5)
+#define MSG_PROXY_DATA (6)
 
 #ifndef MAX
 #define MAX(a, b) (a > b ? a : b)
