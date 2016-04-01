@@ -1,8 +1,8 @@
 # revshell
 
 ### Upcoming Changes
-* TCP proxy support
-* Cleaned up libvterm (remove glib requirement) 
+* stress testing & optimisation pass
+* clean up libvterm (remove glib requirement) (or move to new libvterm for VT220 support)
 
 ### Compiling for Linux
 1. install dependencies as per your distro
@@ -23,6 +23,7 @@
 * Written in C/C++
 * Terminal emulation (vt100) using modified libvterm
 * Communications encrypted using OpenSSL (TLSv1)
+* (new) Supports proxy of TCP traffic from both client/server end for multiple routes
 * Tested on Arch/Kali/Ubuntu and OSX
 
 ### Goals:
@@ -34,7 +35,7 @@
 ### Stretch Goals:
 * (done) Communications to C2 mimic legitimate traffic (i.e. SSL on port 443)
 * (done) Platform independent across OSX and Linux
-* (todo) Ability to proxy traffic through endpoint
+* (done) Ability to proxy traffic through endpoint
 
 ### Screenshots:
 
