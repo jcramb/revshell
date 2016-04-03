@@ -162,7 +162,8 @@ int main(int argc, char **argv) {
                 case MSG_PROXY_INIT:
                 case MSG_PROXY_PASS:
                 case MSG_PROXY_FAIL:
-                case MSG_PROXY_DATA: {
+                case MSG_PROXY_DATA: 
+                case MSG_PROXY_DEAD: {
                     LOG("PROXY: [%04d] %d bytes\n", proxy_count++, bytes);
                     hexdump(msg.body(), msg.body_len());
                     proxy.handle_msg(ssl, msg);

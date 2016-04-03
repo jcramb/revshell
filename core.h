@@ -36,6 +36,7 @@
 #define MSG_PROXY_PASS (4)
 #define MSG_PROXY_FAIL (5)
 #define MSG_PROXY_DATA (6)
+#define MSG_PROXY_DEAD (7)
 
 #ifndef MAX
 #define MAX(a, b) (a > b ? a : b)

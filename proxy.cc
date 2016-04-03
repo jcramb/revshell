@@ -10,7 +10,11 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include <vector>
 #include <cstring>
+#include <sstream>
+#include <fstream>
+#include <iostream>
 
 #include "core.h"
 
@@ -22,6 +26,32 @@ transport_proxy::transport_proxy() {
 
 transport_proxy::~transport_proxy() {
     this->close();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// load proxy data from file
+
+int transport_proxy::init_from_file(std::string filename) {
+    std::vector<std::string> args;
+    std::ifstream file(filename);
+    std::string line;
+
+    while (file && std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string d_ip;
+        int s_port = -1;
+        int d_port = -1;
+        ss >> s_port;
+        ss >> d_ip;
+        ss >> d_port;
+        if (s_port > 0 && s_port < 65536 &&
+            d_port > 0 && d_port < 65536 &&
+            d_ip.size() > 0) {
+            enable(s_port, d_ip, d_port);
+        }
+    }
+    
+    return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -114,7 +144,18 @@ int transport_proxy::dispatch_data(transport & tpt, int sock, int s_port,
     // read proxy buffer data from local socket 
     int bytes_ready = stream->recv(buf, sizeof(buf), sock);
     if (bytes_ready <= 0) {
+
+        // let other end know that the connection is dead
+        std::shared_ptr<sock_info> & header = m_headers[s_port];
+        message msg(MSG_PROXY_DEAD, sizeof(int));
+        int * port = (int*)msg.body();
+        *port = header->d_port;
+        tpt.send(msg);
+        
+        // an error occurred or the connection was closed
+        LOG("proxy: error reading (%d) [err %d]\n", sock, bytes_ready);
         this->close(s_port);
+
         return -1;
     }
 
@@ -230,7 +271,6 @@ int transport_proxy::poll(transport & tpt, int timeout_ms) {
         int sock = stream->sock();
         if (FD_ISSET(sock, &socks) && 
             dispatch_data(tpt, sock, kv.first, stream) < 0) {
-            LOG("reading sock %d\n", sock);
             err = -1;
             continue;
         }
@@ -321,6 +361,15 @@ int transport_proxy::handle_msg(transport & tpt, message & msg) {
 
             break;
         }
+
+        case MSG_PROXY_DEAD: {
+
+            // if proxy dies, close any associated local connections
+            int port = *((int*)msg.body());
+            LOG("proxy: informed of proxy death (%d)\n", port); 
+            this->close(port);
+            break;
+        }
     }
 
     return err;
@@ -403,6 +452,7 @@ int tcp_proxy::establish(std::string d_ip, int d_port) {
     sock_set_blocking(u_sock, false);
     sock_set_blocking(d_sock, false);
     m_active = true;
+    return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

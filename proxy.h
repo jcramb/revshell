@@ -21,6 +21,7 @@ public:
     transport_proxy();
     ~transport_proxy();
 
+    int init_from_file(std::string filename);
     int enable(int s_port, std::string d_ip, int d_port);
     void disable(int s_port);
 

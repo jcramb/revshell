@@ -37,6 +37,10 @@
 * (done) Platform independent across OSX and Linux
 * (done) Ability to proxy traffic through endpoint
 
+### Known Issues:
+* Infinite loop bug related to window sizing
+* Proxy connection not being torn down if remote peer disconnects
+
 ### Screenshots:
 
 ![revshell_osx](https://github.com/jcramb/revshell/blob/master/screenshots/revshell_osx.png)

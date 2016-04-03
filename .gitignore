@@ -2,11 +2,11 @@
 *.a
 *.so
 *.o
-*.server_log
-*.client_log
+.server_log
+.client_log
+.proxies
 build
 client
 server
 cert.h
 cert.cc
-_*
