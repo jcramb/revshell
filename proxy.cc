@@ -217,10 +217,18 @@ int transport_proxy::poll(transport & tpt, int timeout_ms) {
 
     // poll status of socket set
     if (select(fd_max + 1, &socks, 0, 0, &tv) < 0) {
-        LOG("proxy: failed to poll socket set\n");
-        // TODO: add handling to close problem sockets and try again
-        //       otherwise they will never be removed and will ruin
-        //       any attempt to continue handling other proxy streams
+        if (errno != EINTR) {
+            LOG("proxy: failed to poll socket set\n");
+            // TODO: add handling to close problem sockets and try again
+            //       otherwise they will never be removed and will ruin
+            //       any attempt to continue handling other proxy streams
+            for (int i = 0; i < fd_max; i++) {
+                struct stat sb;
+                if (fstat(i, &sb) < 0) {
+                    LOG("select: sock (%d) %s\n", i, strerror(errno));
+                }
+            }
+        }
         return -1;
     }
                     

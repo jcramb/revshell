@@ -39,7 +39,7 @@ public:
     int render(const char * buf, int len);
     void resize(int * rows = NULL, int * cols = NULL);
     void exit();
-
+    
 protected:
     WINDOW * wnd;
     vterm_t * vterm;
@@ -53,6 +53,17 @@ message & mk_resize_msg(int rows, int cols) {
     memcpy(msg.body(), &rows, sizeof(rows)); 
     memcpy(msg.body() + sizeof(rows), &cols, sizeof(cols)); 
     return msg;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// handle window resize signals
+
+void handle_winch(int sig)
+{
+    endwin();
+    refresh();
+    clear();
+    LOG(">> SIGWINCH\n");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -87,6 +98,7 @@ int main(int argc, char **argv) {
     
     // setup tty emulation and retrieve size of terminal window
     tty.init(&rows, &cols);
+    signal(SIGWINCH, handle_winch);
     
     // disable echo for logging since we're in a curses window now
     log_flags(LOG_FILE);
@@ -157,6 +169,7 @@ int main(int argc, char **argv) {
                 tty.resize(&rows, &cols);
 
                 // tell the client about the resize
+                LOG("info: sending resize to client (%dx%d)\n", rows, cols);
                 tpt.send(mk_resize_msg(rows, cols));      
 
             } else {
@@ -264,6 +277,8 @@ void terminal::resize(int * in_rows, int * in_cols) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     vterm_resize(vterm, cols, rows);
+    vterm_wnd_update(vterm);
+    wrefresh(wnd);
     if (in_rows != NULL) *in_rows = rows;
     if (in_cols != NULL) *in_cols = cols;
 }

