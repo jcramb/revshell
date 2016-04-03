@@ -217,7 +217,7 @@ int terminal::init(int * in_rows, int * in_cols) {
     wrefresh(wnd);
 
     // create terminal emulator
-    vterm = vterm_create(cols, rows, VTERM_FLAG_VT100);
+    vterm = vterm_create(cols, rows, 0); //VTERM_FLAG_VT100);
     vterm_wnd_set(vterm, wnd);
     return 0;
 }
@@ -229,32 +229,64 @@ int terminal::init(int * in_rows, int * in_cols) {
 int terminal::get_key(char * buf, int len) {
     memset(buf, 0, len);
     int ch = getch();
-    switch (ch) {
-        case '\n':           strcpy(buf, "\r");      break;
-        case KEY_UP:         strcpy(buf, "\e[A");    break;
-        case KEY_DOWN:       strcpy(buf, "\e[B");    break;
-        case KEY_RIGHT:      strcpy(buf, "\e[C");    break;
-        case KEY_LEFT:       strcpy(buf, "\e[D");    break;
-        case KEY_BACKSPACE:  strcpy(buf, "\b");      break;
-        case KEY_IC:         strcpy(buf, "\e[2~");   break;
-        case KEY_DC:         strcpy(buf, "\e[3~");   break;
-        case KEY_HOME:       strcpy(buf, "\e[7~");   break;
-        case KEY_END:        strcpy(buf, "\e[8~");   break;
-        case KEY_PPAGE:      strcpy(buf, "\e[5~");   break;
-        case KEY_NPAGE:      strcpy(buf, "\e[6~");   break;
-        case KEY_SUSPEND:    strcpy(buf, "\x1A");    break; // ctrl-z
-        case KEY_F(1):       strcpy(buf, "\e[[A");   break;
-        case KEY_F(2):       strcpy(buf, "\e[[B");   break;
-        case KEY_F(3):       strcpy(buf, "\e[[C");   break;
-        case KEY_F(4):       strcpy(buf, "\e[[D");   break;
-        case KEY_F(5):       strcpy(buf, "\e[[E");   break;
-        case KEY_F(6):       strcpy(buf, "\e[17~");  break;
-        case KEY_F(7):       strcpy(buf, "\e[18~");  break;
-        case KEY_F(8):       strcpy(buf, "\e[19~");  break;
-        case KEY_F(9):       strcpy(buf, "\e[20~");  break;
-        case KEY_F(10):      strcpy(buf, "\e[21~");  break;
-        default:
-            buf[0] = ch;
+    if (0) { // vt100 rendering
+        switch (ch) {
+            case '\n':           strcpy(buf, "\r");      break;
+            case KEY_UP:         strcpy(buf, "\e[A");    break;
+            case KEY_DOWN:       strcpy(buf, "\e[B");    break;
+            case KEY_RIGHT:      strcpy(buf, "\e[C");    break;
+            case KEY_LEFT:       strcpy(buf, "\e[D");    break;
+            case KEY_BACKSPACE:  strcpy(buf, "\b");      break;
+            case KEY_IC:         strcpy(buf, "\e[2~");   break;
+            case KEY_DC:         strcpy(buf, "\e[3~");   break;
+            case KEY_HOME:       strcpy(buf, "\e[7~");   break;
+            case KEY_END:        strcpy(buf, "\e[8~");   break;
+            case KEY_PPAGE:      strcpy(buf, "\e[5~");   break;
+            case KEY_NPAGE:      strcpy(buf, "\e[6~");   break;
+            case KEY_SUSPEND:    strcpy(buf, "\x1A");    break; // ctrl-z
+            case KEY_F(1):       strcpy(buf, "\e[[A");   break;
+            case KEY_F(2):       strcpy(buf, "\e[[B");   break;
+            case KEY_F(3):       strcpy(buf, "\e[[C");   break;
+            case KEY_F(4):       strcpy(buf, "\e[[D");   break;
+            case KEY_F(5):       strcpy(buf, "\e[[E");   break;
+            case KEY_F(6):       strcpy(buf, "\e[17~");  break;
+            case KEY_F(7):       strcpy(buf, "\e[18~");  break;
+            case KEY_F(8):       strcpy(buf, "\e[19~");  break;
+            case KEY_F(9):       strcpy(buf, "\e[20~");  break;
+            case KEY_F(10):      strcpy(buf, "\e[21~");  break;
+            default:
+                buf[0] = ch;
+        }
+    } else { // rxvt rendering
+        switch (ch) {
+            case '\n':           strcpy(buf, "\r");      break;
+            case KEY_UP:         strcpy(buf, "\e[A");    break;
+            case KEY_DOWN:       strcpy(buf, "\e[B");    break;
+            case KEY_RIGHT:      strcpy(buf, "\e[C");    break;
+            case KEY_LEFT:       strcpy(buf, "\e[D");    break;
+            case KEY_BACKSPACE:  strcpy(buf, "\b");      break;
+            case KEY_IC:         strcpy(buf, "\e[2~");   break;
+            case KEY_DC:         strcpy(buf, "\e[3~");   break;
+            case KEY_HOME:       strcpy(buf, "\e[7~");   break;
+            case KEY_END:        strcpy(buf, "\e[8~");   break;
+            case KEY_PPAGE:      strcpy(buf, "\e[5~");   break;
+            case KEY_NPAGE:      strcpy(buf, "\e[6~");   break;
+            case KEY_SUSPEND:    strcpy(buf, "\x1A");    break; // ctrl-z
+            case KEY_F(1):       strcpy(buf, "\e[11~");  break;
+            case KEY_F(2):       strcpy(buf, "\e[12~");  break;
+            case KEY_F(3):       strcpy(buf, "\e[13~");  break;
+            case KEY_F(4):       strcpy(buf, "\e[14~");  break;
+            case KEY_F(5):       strcpy(buf, "\e[15~");  break;
+            case KEY_F(6):       strcpy(buf, "\e[17~");  break;
+            case KEY_F(7):       strcpy(buf, "\e[18~");  break;
+            case KEY_F(8):       strcpy(buf, "\e[19~");  break;
+            case KEY_F(9):       strcpy(buf, "\e[20~");  break;
+            case KEY_F(10):      strcpy(buf, "\e[21~");  break;
+            case KEY_F(11):      strcpy(buf, "\e[23~");  break;
+            case KEY_F(12):      strcpy(buf, "\e[24~");  break;
+            default:
+                buf[0] = ch;
+        }
     }
     return ch;
 }
